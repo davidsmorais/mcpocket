@@ -12,7 +12,7 @@ export function readOpenCodeMcpServers(): McpServersMap {
     const config: OpenCodeConfig = JSON.parse(fs.readFileSync(configPath, 'utf8'));
     return config.mcp?.servers ?? {};
   } catch {
-    console.warn(`[carry-on] Could not read OpenCode config at ${configPath}`);
+    console.warn(`[mcpocket] Could not read OpenCode config at ${configPath}`);
     return {};
   }
 }
@@ -26,7 +26,7 @@ export function writeOpenCodeMcpServers(servers: McpServersMap): void {
     try {
       config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
     } catch {
-      console.warn(`[carry-on] Could not parse existing OpenCode config, will overwrite mcp.servers only`);
+      console.warn(`[mcpocket] Could not parse existing OpenCode config, will overwrite mcp.servers only`);
     }
   } else {
     fs.mkdirSync(dir, { recursive: true });

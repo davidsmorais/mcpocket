@@ -1,10 +1,10 @@
 {
   "name": "mcpocket",
   "version": "0.1.0",
-  "description": "Your AI setup. Everywhere you work. Syncs Claude Code agents, skills, plugins, and MCPs across machines.",
+  "description": "Your AI setup. Every pocket. Syncs agents, skills, plugins, and MCPs across all your machines like magic.",
   "main": "dist/cli.js",
   "bin": {
-    "carry-on": "./dist/cli.js"
+    "mcpocket": "./dist/cli.js"
   },
   "scripts": {
     "build": "tsc",

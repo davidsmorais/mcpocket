@@ -120,15 +120,15 @@ export function getOpenCodeConfigPath(): string {
 }
 
 /**
- * Get the carry-on config directory
+ * Get the mcpocket config directory
  */
-export function getCarryOnConfigDir(): string {
-  return path.join(HOME, '.carry-on');
+export function getMcpocketConfigDir(): string {
+  return path.join(HOME, '.mcpocket');
 }
 
 /**
- * Get the carry-on config file path
+ * Get the mcpocket config file path
  */
-export function getCarryOnConfigPath(): string {
-  return path.join(getCarryOnConfigDir(), 'config.json');
+export function getMcpocketConfigPath(): string {
+  return path.join(getMcpocketConfigDir(), 'config.json');
 }

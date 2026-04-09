@@ -17,43 +17,45 @@ import { readPluginManifestsFromRepo, applyPluginManifests } from '../sync/plugi
 import { applyAgentsFromRepo } from '../sync/agents.js';
 import { applySkillsFromRepo } from '../sync/skills.js';
 import { askSecret } from '../utils/prompt.js';
+import { sparkle, celebrate, section, stat, oops, heads_up, WITTY } from '../utils/sparkle.js';
 
 export async function pullCommand(): Promise<void> {
   const config = readConfig();
   const repoDir = getLocalRepoDir();
 
   // Pull or clone
-  console.log('Pulling latest from remote...');
+  section('Pull');
+  sparkle(WITTY.pulling);
   try {
     pullRepo(repoDir, config.githubToken, config.repoCloneUrl);
     ensureGitConfig(repoDir);
   } catch (err) {
-    console.error(`Error pulling repo: ${(err as Error).message}`);
+    oops((err as Error).message);
     process.exit(1);
   }
 
   // Check for mcp-config.json
   const mcpConfigPath = path.join(repoDir, 'mcp-config.json');
   if (!fs.existsSync(mcpConfigPath)) {
-    console.log('No mcp-config.json found in remote. Run `carry-on push` on your source machine first.');
+    heads_up('No config found in the pocket yet. Run `mcpocket push` on your source machine first!');
     return;
   }
 
   // Get passphrase for decrypting secrets
-  const passphrase = await askSecret('Passphrase to decrypt secrets: ');
+  const passphrase = await askSecret('  🔓 Passphrase to decrypt secrets: ');
   if (!passphrase) {
-    console.error('Error: passphrase cannot be empty.');
+    oops('Passphrase cannot be empty.');
     process.exit(1);
   }
 
   // Restore MCP servers
-  console.log('\nRestoring MCP servers...');
+  sparkle(WITTY.decrypting);
   let remoteServers: ReturnType<typeof restoreFromPortableConfig>;
   try {
     const portableConfig: PortableMcpConfig = JSON.parse(fs.readFileSync(mcpConfigPath, 'utf8'));
     remoteServers = restoreFromPortableConfig(portableConfig, passphrase);
   } catch (err) {
-    console.error(`Error decrypting MCPs: ${(err as Error).message}`);
+    oops(`Decryption failed: ${(err as Error).message}`);
     process.exit(1);
   }
 
@@ -84,39 +86,42 @@ export async function pullCommand(): Promise<void> {
     updatedClients.push(`OpenCode (${opencodePath()})`);
   }
 
-  console.log(`  Restored ${serverCount} MCP server(s)`);
+  sparkle(`Restored ${serverCount} MCP server(s)`);
 
   // Apply plugin manifests
-  console.log('\nRestoring plugin manifests...');
+  sparkle(WITTY.readingPlugins);
   const manifests = readPluginManifestsFromRepo(repoDir);
   const updatedManifests = applyPluginManifests(manifests);
-  console.log(`  Updated ${updatedManifests.length} manifest file(s)`);
+  sparkle(`Updated ${updatedManifests.length} manifest file(s)`);
 
   // Apply agents
-  console.log('\nRestoring agents...');
+  sparkle(WITTY.readingAgents);
   const agentCount = applyAgentsFromRepo(repoDir);
-  console.log(`  Restored ${agentCount} agent file(s)`);
+  sparkle(`Restored ${agentCount} agent file(s)`);
 
   // Apply skills
-  console.log('\nRestoring skills...');
+  sparkle(WITTY.readingSkills);
   const skillCount = applySkillsFromRepo(repoDir);
-  console.log(`  Restored ${skillCount} skill file(s)`);
+  sparkle(`Restored ${skillCount} skill file(s)`);
 
   // Summary
-  console.log('\n✓ Pull complete!\n');
-  console.log('Summary:');
-  console.log(`  MCPs:      ${serverCount} servers applied to ${updatedClients.length} client(s)`);
-  console.log(`  Plugins:   ${updatedManifests.length} manifest file(s) updated`);
-  console.log(`  Agents:    ${agentCount}`);
-  console.log(`  Skills:    ${skillCount}`);
+  celebrate(WITTY.pullDone);
+
+  section('Summary');
+  stat('MCPs', `${serverCount} servers → ${updatedClients.length} client(s)`);
+  stat('Plugins', `${updatedManifests.length} manifest file(s)`);
+  stat('Agents', agentCount.toString());
+  stat('Skills', skillCount.toString());
 
   if (updatedClients.length > 0) {
-    console.log('\nUpdated clients:');
+    console.log('\n  Updated clients:');
     for (const c of updatedClients) {
-      console.log(`  • ${c}`);
+      sparkle(c);
     }
-    console.log('\n⚠  Restart Claude Desktop to apply MCP changes.');
+    heads_up('Restart Claude Desktop to apply MCP changes.');
   }
+  console.log('');
+}
 
   if (updatedManifests.length > 0) {
     console.log('⚠  Restart Claude Code to trigger plugin installation.');

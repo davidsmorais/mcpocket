@@ -1,9 +1,9 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
-import { getCarryOnConfigDir, getCarryOnConfigPath } from './utils/paths.js';
+import { getMcpocketConfigDir, getMcpocketConfigPath } from './utils/paths.js';
 
-export interface CarryOnConfig {
+export interface McpocketConfig {
   githubToken: string;
   repoFullName: string;   // owner/repo
   repoCloneUrl: string;
@@ -11,30 +11,30 @@ export interface CarryOnConfig {
 }
 
 export function configExists(): boolean {
-  return fs.existsSync(getCarryOnConfigPath());
+  return fs.existsSync(getMcpocketConfigPath());
 }
 
-export function readConfig(): CarryOnConfig {
-  const configPath = getCarryOnConfigPath();
+export function readConfig(): McpocketConfig {
+  const configPath = getMcpocketConfigPath();
   if (!fs.existsSync(configPath)) {
     throw new Error(
-      'carry-on is not initialized. Run `carry-on init` first.'
+      'mcpocket is not initialized. Run `mcpocket init` first.'
     );
   }
   return JSON.parse(fs.readFileSync(configPath, 'utf8'));
 }
 
-export function writeConfig(config: CarryOnConfig): void {
-  const dir = getCarryOnConfigDir();
+export function writeConfig(config: McpocketConfig): void {
+  const dir = getMcpocketConfigDir();
   fs.mkdirSync(dir, { recursive: true });
-  fs.writeFileSync(getCarryOnConfigPath(), JSON.stringify(config, null, 2), 'utf8');
+  fs.writeFileSync(getMcpocketConfigPath(), JSON.stringify(config, null, 2), 'utf8');
   // Restrict permissions on non-Windows (contains GitHub token)
   if (process.platform !== 'win32') {
-    fs.chmodSync(getCarryOnConfigPath(), 0o600);
+    fs.chmodSync(getMcpocketConfigPath(), 0o600);
   }
 }
 
 /** Local clone directory */
 export function getLocalRepoDir(): string {
-  return path.join(os.homedir(), '.carry-on', 'repo');
+  return path.join(os.homedir(), '.mcpocket', 'repo');
 }

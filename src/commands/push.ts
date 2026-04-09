@@ -10,40 +10,43 @@ import { readPluginManifests, writePluginManifestsToRepo } from '../sync/plugins
 import { writeAgentsToRepo } from '../sync/agents.js';
 import { writeSkillsToRepo } from '../sync/skills.js';
 import { askSecret } from '../utils/prompt.js';
+import { sparkle, celebrate, section, stat, oops, heads_up, WITTY } from '../utils/sparkle.js';
 
 export async function pushCommand(): Promise<void> {
   const config = readConfig();
   const repoDir = getLocalRepoDir();
 
   // Pull latest first to avoid conflicts
-  console.log('Pulling latest from remote...');
+  section('Push');
+  sparkle(WITTY.pulling);
   try {
     pullRepo(repoDir, config.githubToken, config.repoCloneUrl);
   } catch (err) {
-    console.warn(`Warning: could not pull latest — ${(err as Error).message}`);
+    heads_up(`Could not pull latest — ${(err as Error).message}`);
   }
 
   // Get passphrase for encrypting secrets
-  const passphrase = await askSecret('Passphrase to encrypt secrets: ');
+  const passphrase = await askSecret('  🔒 Passphrase to encrypt secrets: ');
   if (!passphrase) {
-    console.error('Error: passphrase cannot be empty.');
+    oops('Passphrase cannot be empty.');
     process.exit(1);
   }
-  const confirm = await askSecret('Confirm passphrase: ');
+  const confirm = await askSecret('  🔒 Confirm passphrase: ');
   if (passphrase !== confirm) {
-    console.error('Error: passphrases do not match.');
+    oops('Passphrases don\'t match. Give it another whirl!');
     process.exit(1);
   }
 
-  console.log('\nReading MCP configurations...');
+  sparkle(WITTY.readingMCP);
   const desktop = readClaudeDesktopMcpServers();
   const claudeCode = readClaudeCodeMcpServers();
   const opencode = readOpenCodeMcpServers();
   const merged = mergeMcpSources(desktop, claudeCode, opencode);
   const serverCount = Object.keys(merged).length;
-  console.log(`  Found ${serverCount} MCP server(s) across all clients`);
+  sparkle(`Found ${serverCount} MCP server(s) across all clients`);
 
   // Write mcp-config.json
+  sparkle(WITTY.encrypting);
   const portableConfig = buildPortableConfig(merged, passphrase);
   fs.writeFileSync(
     path.join(repoDir, 'mcp-config.json'),
@@ -52,36 +55,37 @@ export async function pushCommand(): Promise<void> {
   );
 
   // Sync plugin manifests
-  console.log('\nReading plugin manifests...');
+  sparkle(WITTY.readingPlugins);
   const manifests = readPluginManifests();
   const manifestCount = Object.keys(manifests).length;
-  console.log(`  Found ${manifestCount} plugin manifest file(s)`);
+  sparkle(`Found ${manifestCount} plugin manifest file(s)`);
   writePluginManifestsToRepo(manifests, repoDir);
 
   // Sync agents
-  console.log('\nSyncing agents...');
+  sparkle(WITTY.readingAgents);
   const agentCount = writeAgentsToRepo(repoDir);
-  console.log(`  Synced ${agentCount} agent file(s)`);
+  sparkle(`Synced ${agentCount} agent file(s)`);
 
   // Sync skills
-  console.log('\nSyncing skills...');
+  sparkle(WITTY.readingSkills);
   const skillCount = writeSkillsToRepo(repoDir);
-  console.log(`  Synced ${skillCount} skill file(s)`);
+  sparkle(`Synced ${skillCount} skill file(s)`);
 
   // Commit and push
-  console.log('\nPushing to GitHub...');
+  sparkle(WITTY.pushing);
   ensureGitConfig(repoDir);
   try {
-    commitAndPush(repoDir, config.githubToken, config.repoCloneUrl, 'carry-on: push');
-    console.log(`\n✓ Pushed to ${config.repoHtmlUrl}`);
+    commitAndPush(repoDir, config.githubToken, config.repoCloneUrl, 'mcpocket: push');
+    celebrate(WITTY.pushDone);
   } catch (err) {
-    console.error(`Error pushing: ${(err as Error).message}`);
+    oops(`Push failed: ${(err as Error).message}`);
     process.exit(1);
   }
 
-  console.log('\nSummary:');
-  console.log(`  MCPs:      ${serverCount}`);
-  console.log(`  Plugins:   ${manifestCount} manifest file(s)`);
-  console.log(`  Agents:    ${agentCount}`);
-  console.log(`  Skills:    ${skillCount}`);
+  section('Summary');
+  stat('MCPs', serverCount.toString());
+  stat('Plugins', `${manifestCount} manifest file(s)`);
+  stat('Agents', agentCount.toString());
+  stat('Skills', skillCount.toString());
+  console.log('');
 }

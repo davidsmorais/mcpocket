@@ -11,7 +11,7 @@ export function readClaudeCodeSettings(): ClaudeCodeSettings {
   try {
     return JSON.parse(fs.readFileSync(settingsPath, 'utf8'));
   } catch {
-    console.warn(`[carry-on] Could not read Claude Code settings at ${settingsPath}`);
+    console.warn(`[mcpocket] Could not read Claude Code settings at ${settingsPath}`);
     return {};
   }
 }
@@ -29,7 +29,7 @@ export function writeClaudeCodeMcpServers(servers: McpServersMap): void {
     try {
       settings = JSON.parse(fs.readFileSync(settingsPath, 'utf8'));
     } catch {
-      console.warn(`[carry-on] Could not parse existing Claude Code settings, will overwrite mcpServers only`);
+      console.warn(`[mcpocket] Could not parse existing Claude Code settings, will overwrite mcpServers only`);
     }
   } else {
     fs.mkdirSync(dir, { recursive: true });

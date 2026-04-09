@@ -7,21 +7,22 @@ import { readClaudeCodeMcpServers } from '../clients/claude-code.js';
 import { readOpenCodeMcpServers } from '../clients/opencode.js';
 import { mergeMcpSources } from '../sync/mcp.js';
 import type { PortableMcpConfig } from '../sync/mcp.js';
+import { sparkle, section, heads_up, WITTY } from '../utils/sparkle.js';
 
 export async function statusCommand(): Promise<void> {
   const config = readConfig();
   const repoDir = getLocalRepoDir();
 
-  console.log('Fetching remote state...');
+  sparkle(WITTY.pulling);
   try {
     pullRepo(repoDir, config.githubToken, config.repoCloneUrl);
   } catch (err) {
-    console.warn(`Warning: could not pull latest — ${(err as Error).message}`);
+    heads_up(`Could not pull latest — ${(err as Error).message}`);
   }
 
   const mcpConfigPath = path.join(repoDir, 'mcp-config.json');
   if (!fs.existsSync(mcpConfigPath)) {
-    console.log('\nRemote has no config yet. Run `carry-on push` to upload your setup.');
+    heads_up('The pocket is empty! Run `mcpocket push` to stash your setup.');
     return;
   }
 
@@ -40,52 +41,52 @@ export async function statusCommand(): Promise<void> {
   const onlyLocal = [...localNames].filter(n => !remoteNames.has(n));
   const inBoth = [...remoteNames].filter(n => localNames.has(n));
 
-  console.log('\n── MCP Servers ─────────────────────────────────');
+  section('MCP Servers');
   if (inBoth.length > 0) {
-    console.log('\n  Synced:');
-    for (const n of inBoth) console.log(`    ✓ ${n}`);
+    console.log('\n    \x1b[32mSynced:\x1b[0m');
+    for (const n of inBoth) console.log(`      ✓ ${n}`);
   }
   if (onlyRemote.length > 0) {
-    console.log('\n  In remote, not local (run pull):');
-    for (const n of onlyRemote) console.log(`    ↓ ${n}`);
+    console.log('\n    \x1b[36mIn pocket, not here (run pull):\x1b[0m');
+    for (const n of onlyRemote) console.log(`      ↓ ${n}`);
   }
   if (onlyLocal.length > 0) {
-    console.log('\n  In local, not remote (run push):');
-    for (const n of onlyLocal) console.log(`    ↑ ${n}`);
+    console.log('\n    \x1b[33mLocal only (run push):\x1b[0m');
+    for (const n of onlyLocal) console.log(`      ↑ ${n}`);
   }
   if (remoteNames.size === 0 && localNames.size === 0) {
-    console.log('  No MCP servers found.');
+    sparkle('No MCP servers found. Your pocket is empty!');
   }
 
   // Plugins
-  console.log('\n── Plugin Manifests ────────────────────────────');
+  section('Plugin Manifests');
   const pluginFiles = ['plugins/installed_plugins.json', 'plugins/blocklist.json', 'plugins/known_marketplaces.json'];
   for (const f of pluginFiles) {
     const inRepo = fs.existsSync(path.join(repoDir, f));
-    console.log(`  ${inRepo ? '✓' : '✗'} ${f}`);
+    console.log(`    ${inRepo ? '\x1b[32m✓\x1b[0m' : '\x1b[31m✗\x1b[0m'} ${f}`);
   }
 
   // Agents
-  console.log('\n── Agents ──────────────────────────────────────');
+  section('Agents');
   const agentsDir = path.join(repoDir, 'agents');
   if (fs.existsSync(agentsDir)) {
     const count = countFiles(agentsDir, '.md');
-    console.log(`  ${count} agent file(s) in remote`);
+    sparkle(`${count} agent file(s) in the pocket`);
   } else {
-    console.log('  Not synced yet');
+    sparkle('Not synced yet — they\'re waiting for their first adventure!');
   }
 
   // Skills
-  console.log('\n── Skills ──────────────────────────────────────');
+  section('Skills');
   const skillsDir = path.join(repoDir, 'skills');
   if (fs.existsSync(skillsDir)) {
     const count = countFiles(skillsDir);
-    console.log(`  ${count} skill file(s) in remote`);
+    sparkle(`${count} skill file(s) in the pocket`);
   } else {
-    console.log('  Not synced yet');
+    sparkle('Not synced yet — skill points unspent!');
   }
 
-  console.log(`\nRemote: ${config.repoHtmlUrl}\n`);
+  console.log(`\n  🔗 Remote: ${config.repoHtmlUrl}\n`);
 }
 
 function countFiles(dir: string, ext?: string): number {

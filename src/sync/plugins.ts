@@ -30,7 +30,7 @@ export function readPluginManifests(): Record<string, unknown> {
       try {
         manifests[relPath] = JSON.parse(fs.readFileSync(fullPath, 'utf8'));
       } catch {
-        console.warn(`[carry-on] Could not read ${fullPath}`);
+        console.warn(`[mcpocket] Could not read ${fullPath}`);
       }
     }
   }
@@ -56,7 +56,7 @@ export function readPluginManifestsFromRepo(repoDir: string): Record<string, unk
       try {
         manifests[relPath] = JSON.parse(fs.readFileSync(fullPath, 'utf8'));
       } catch {
-        console.warn(`[carry-on] Could not read repo file ${fullPath}`);
+        console.warn(`[mcpocket] Could not read repo file ${fullPath}`);
       }
     }
   }

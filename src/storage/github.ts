@@ -17,7 +17,7 @@ function headers(token: string): Record<string, string> {
     'Accept': 'application/vnd.github+json',
     'X-GitHub-Api-Version': '2022-11-28',
     'Content-Type': 'application/json',
-    'User-Agent': 'carry-on-cli',
+    'User-Agent': 'mcpocket-cli',
   };
 }
 
@@ -31,9 +31,9 @@ export async function getAuthenticatedUser(token: string): Promise<string> {
   return data.login;
 }
 
-/** Create a private repo named carry-on-sync (idempotent — returns existing if 422) */
+/** Create a private repo named mcpocket-sync (idempotent — returns existing if 422) */
 export async function createRepo(token: string, owner: string): Promise<RepoInfo> {
-  const repoName = 'carry-on-sync';
+  const repoName = 'mcpocket-sync';
 
   // Try creating
   const res = await fetch(`${GITHUB_API}/user/repos`, {
@@ -41,7 +41,7 @@ export async function createRepo(token: string, owner: string): Promise<RepoInfo
     headers: headers(token),
     body: JSON.stringify({
       name: repoName,
-      description: 'carry-on: AI agent config sync',
+      description: 'mcpocket: AI agent config sync',
       private: true,
       auto_init: true,
     }),
@@ -104,7 +104,7 @@ export function pullRepo(localDir: string, token: string, remoteUrl: string): vo
 }
 
 /** Stage all changes, commit, and push */
-export function commitAndPush(localDir: string, token: string, remoteUrl: string, message = 'carry-on: sync'): void {
+export function commitAndPush(localDir: string, token: string, remoteUrl: string, message = 'mcpocket: sync'): void {
   const authUrl = remoteUrl.replace('https://', `https://${token}@`);
   run('git', ['remote', 'set-url', 'origin', authUrl], { cwd: localDir });
   run('git', ['add', '-A'], { cwd: localDir });
@@ -115,7 +115,7 @@ export function commitAndPush(localDir: string, token: string, remoteUrl: string
     encoding: 'utf8',
   });
   if (!status.stdout?.trim()) {
-    console.log('[carry-on] Nothing changed — remote is already up to date.');
+    console.log('[mcpocket] Nothing changed — remote is already up to date.');
     return;
   }
 
@@ -127,11 +127,11 @@ export function commitAndPush(localDir: string, token: string, remoteUrl: string
 export function ensureGitConfig(localDir: string): void {
   const name = child_process.spawnSync('git', ['config', 'user.name'], { encoding: 'utf8' });
   if (!name.stdout?.trim()) {
-    run('git', ['config', 'user.name', 'carry-on'], { cwd: localDir });
+    run('git', ['config', 'user.name', 'mcpocket'], { cwd: localDir });
   }
   const email = child_process.spawnSync('git', ['config', 'user.email'], { encoding: 'utf8' });
   if (!email.stdout?.trim()) {
-    run('git', ['config', 'user.email', 'carry-on@localhost'], { cwd: localDir });
+    run('git', ['config', 'user.email', 'mcpocket@localhost'], { cwd: localDir });
   }
 }
 

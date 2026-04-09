@@ -13,7 +13,7 @@ export function readClaudeDesktopMcpServers(): McpServersMap {
     const config: ClaudeDesktopConfig = JSON.parse(raw);
     return config.mcpServers ?? {};
   } catch {
-    console.warn(`[carry-on] Could not read Claude Desktop config at ${configPath}`);
+    console.warn(`[mcpocket] Could not read Claude Desktop config at ${configPath}`);
     return {};
   }
 }
@@ -27,7 +27,7 @@ export function writeClaudeDesktopMcpServers(servers: McpServersMap): void {
     try {
       config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
     } catch {
-      console.warn(`[carry-on] Could not parse existing Claude Desktop config, will overwrite mcpServers only`);
+      console.warn(`[mcpocket] Could not parse existing Claude Desktop config, will overwrite mcpServers only`);
     }
   } else {
     fs.mkdirSync(dir, { recursive: true });
