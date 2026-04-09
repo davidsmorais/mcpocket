@@ -2,6 +2,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { readConfig, getLocalRepoDir } from '../config.js';
 import { pullRepo, cloneRepo, ensureGitConfig } from '../storage/github.js';
+import { fetchGist, writeGistFilesToDir } from '../storage/gist.js';
 import { writeClaudeDesktopMcpServers, getConfigPath as desktopPath } from '../clients/claude-desktop.js';
 import { writeClaudeCodeMcpServers, getSettingsPath } from '../clients/claude-code.js';
 import { writeOpenCodeMcpServers, getConfigPath as opencodePath } from '../clients/opencode.js';
@@ -26,12 +27,24 @@ export async function pullCommand(): Promise<void> {
   // Pull or clone
   section('Pull');
   sparkle(WITTY.pulling);
-  try {
-    pullRepo(repoDir, config.githubToken, config.repoCloneUrl);
-    ensureGitConfig(repoDir);
-  } catch (err) {
-    oops((err as Error).message);
-    process.exit(1);
+
+  if (config.storageType === 'gist') {
+    try {
+      const gistFiles = await fetchGist(config.githubToken, config.gistId!);
+      fs.mkdirSync(repoDir, { recursive: true });
+      writeGistFilesToDir(repoDir, gistFiles);
+    } catch (err) {
+      oops((err as Error).message);
+      process.exit(1);
+    }
+  } else {
+    try {
+      pullRepo(repoDir, config.githubToken, config.repoCloneUrl!);
+      ensureGitConfig(repoDir);
+    } catch (err) {
+      oops((err as Error).message);
+      process.exit(1);
+    }
   }
 
   // Check for mcp-config.json

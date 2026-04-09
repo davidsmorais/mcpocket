@@ -3,11 +3,18 @@ import * as path from 'path';
 import * as os from 'os';
 import { getMcpocketConfigDir, getMcpocketConfigPath } from './utils/paths.js';
 
+export type StorageType = 'repo' | 'gist';
+
 export interface McpocketConfig {
   githubToken: string;
-  repoFullName: string;   // owner/repo
-  repoCloneUrl: string;
-  repoHtmlUrl: string;
+  storageType: StorageType;
+  // Repo storage
+  repoFullName?: string;
+  repoCloneUrl?: string;
+  repoHtmlUrl?: string;
+  // Gist storage
+  gistId?: string;
+  gistUrl?: string;
 }
 
 export function configExists(): boolean {
@@ -21,7 +28,12 @@ export function readConfig(): McpocketConfig {
       'mcpocket is not initialized. Run `mcpocket init` first.'
     );
   }
-  return JSON.parse(fs.readFileSync(configPath, 'utf8'));
+  const raw = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+  // Backward compat: configs created before gist support default to repo
+  if (!raw.storageType) {
+    raw.storageType = 'repo';
+  }
+  return raw;
 }
 
 export function writeConfig(config: McpocketConfig): void {

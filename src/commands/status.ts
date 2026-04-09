@@ -2,6 +2,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { readConfig, getLocalRepoDir } from '../config.js';
 import { pullRepo } from '../storage/github.js';
+import { fetchGist, writeGistFilesToDir } from '../storage/gist.js';
 import { readClaudeDesktopMcpServers } from '../clients/claude-desktop.js';
 import { readClaudeCodeMcpServers } from '../clients/claude-code.js';
 import { readOpenCodeMcpServers } from '../clients/opencode.js';
@@ -14,10 +15,21 @@ export async function statusCommand(): Promise<void> {
   const repoDir = getLocalRepoDir();
 
   sparkle(WITTY.pulling);
-  try {
-    pullRepo(repoDir, config.githubToken, config.repoCloneUrl);
-  } catch (err) {
-    heads_up(`Could not pull latest — ${(err as Error).message}`);
+
+  if (config.storageType === 'gist') {
+    try {
+      const gistFiles = await fetchGist(config.githubToken, config.gistId!);
+      fs.mkdirSync(repoDir, { recursive: true });
+      writeGistFilesToDir(repoDir, gistFiles);
+    } catch (err) {
+      heads_up(`Could not fetch gist — ${(err as Error).message}`);
+    }
+  } else {
+    try {
+      pullRepo(repoDir, config.githubToken, config.repoCloneUrl!);
+    } catch (err) {
+      heads_up(`Could not pull latest — ${(err as Error).message}`);
+    }
   }
 
   const mcpConfigPath = path.join(repoDir, 'mcp-config.json');
@@ -86,7 +98,8 @@ export async function statusCommand(): Promise<void> {
     sparkle('Not synced yet — skill points unspent!');
   }
 
-  console.log(`\n  🔗 Remote: ${config.repoHtmlUrl}\n`);
+  const remoteUrl = config.storageType === 'gist' ? config.gistUrl : config.repoHtmlUrl;
+  console.log(`\n  🔗 Remote: ${remoteUrl}\n`);
 }
 
 function countFiles(dir: string, ext?: string): number {

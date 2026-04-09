@@ -1,5 +1,7 @@
 import { getAuthenticatedUser, createRepo, cloneRepo, ensureGitConfig } from '../storage/github.js';
+import { createGist } from '../storage/gist.js';
 import { writeConfig, configExists, getLocalRepoDir } from '../config.js';
+import type { StorageType } from '../config.js';
 import { ask, askSecret } from '../utils/prompt.js';
 import { sparkle, celebrate, section, oops, heads_up, WITTY } from '../utils/sparkle.js';
 
@@ -37,36 +39,68 @@ export async function initCommand(): Promise<void> {
     process.exit(1);
   }
 
-  // Create repo
-  sparkle('Creating your private sync pocket (mcpocket-sync)...');
-  let repoInfo: Awaited<ReturnType<typeof createRepo>>;
-  try {
-    repoInfo = await createRepo(token, owner);
-    sparkle(`Pocket ready: ${repoInfo.htmlUrl}`);
-  } catch (err) {
-    oops((err as Error).message);
-    process.exit(1);
-  }
+  // Choose storage type
+  console.log('');
+  sparkle('Where should mcpocket store your config?');
+  console.log('    [1] GitHub repo  (private repo, full git history)');
+  console.log('    [2] GitHub gist  (lighter, no git clone needed)\n');
+  const storageChoice = await ask('  Pick one [1/2]: ');
+  const storageType: StorageType = storageChoice === '2' ? 'gist' : 'repo';
 
-  // Clone repo locally
-  const localDir = getLocalRepoDir();
-  sparkle(WITTY.cloning);
-  try {
-    cloneRepo(repoInfo.cloneUrl, token, localDir);
-    ensureGitConfig(localDir);
-    sparkle(`Stashed at ${localDir}`);
-  } catch (err) {
-    oops((err as Error).message);
-    process.exit(1);
-  }
+  if (storageType === 'gist') {
+    sparkle('Creating your private sync gist...');
+    let gistInfo: Awaited<ReturnType<typeof createGist>>;
+    try {
+      gistInfo = await createGist(token);
+      sparkle(`Pocket ready: ${gistInfo.htmlUrl}`);
+    } catch (err) {
+      oops((err as Error).message);
+      process.exit(1);
+    }
 
-  // Save config
-  writeConfig({
-    githubToken: token,
-    repoFullName: repoInfo.fullName,
-    repoCloneUrl: repoInfo.cloneUrl,
-    repoHtmlUrl: repoInfo.htmlUrl,
-  });
+    // Ensure staging dir exists
+    const localDir = getLocalRepoDir();
+    const fs = await import('fs');
+    fs.mkdirSync(localDir, { recursive: true });
+
+    writeConfig({
+      githubToken: token,
+      storageType: 'gist',
+      gistId: gistInfo.id,
+      gistUrl: gistInfo.htmlUrl,
+    });
+  } else {
+    // Create repo
+    sparkle('Creating your private sync pocket (mcpocket-sync)...');
+    let repoInfo: Awaited<ReturnType<typeof createRepo>>;
+    try {
+      repoInfo = await createRepo(token, owner);
+      sparkle(`Pocket ready: ${repoInfo.htmlUrl}`);
+    } catch (err) {
+      oops((err as Error).message);
+      process.exit(1);
+    }
+
+    // Clone repo locally
+    const localDir = getLocalRepoDir();
+    sparkle(WITTY.cloning);
+    try {
+      cloneRepo(repoInfo.cloneUrl, token, localDir);
+      ensureGitConfig(localDir);
+      sparkle(`Stashed at ${localDir}`);
+    } catch (err) {
+      oops((err as Error).message);
+      process.exit(1);
+    }
+
+    writeConfig({
+      githubToken: token,
+      storageType: 'repo',
+      repoFullName: repoInfo.fullName,
+      repoCloneUrl: repoInfo.cloneUrl,
+      repoHtmlUrl: repoInfo.htmlUrl,
+    });
+  }
 
   celebrate(WITTY.initDone);
   console.log('\n  Next steps:');

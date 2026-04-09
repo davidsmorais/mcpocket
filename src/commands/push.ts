@@ -2,6 +2,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { readConfig, getLocalRepoDir } from '../config.js';
 import { pullRepo, commitAndPush, ensureGitConfig } from '../storage/github.js';
+import { collectFilesFromDir, updateGist } from '../storage/gist.js';
 import { readClaudeDesktopMcpServers } from '../clients/claude-desktop.js';
 import { readClaudeCodeMcpServers } from '../clients/claude-code.js';
 import { readOpenCodeMcpServers } from '../clients/opencode.js';
@@ -16,13 +17,18 @@ export async function pushCommand(): Promise<void> {
   const config = readConfig();
   const repoDir = getLocalRepoDir();
 
-  // Pull latest first to avoid conflicts
   section('Push');
-  sparkle(WITTY.pulling);
-  try {
-    pullRepo(repoDir, config.githubToken, config.repoCloneUrl);
-  } catch (err) {
-    heads_up(`Could not pull latest — ${(err as Error).message}`);
+
+  // For repo mode, pull latest first to avoid conflicts
+  if (config.storageType !== 'gist') {
+    sparkle(WITTY.pulling);
+    try {
+      pullRepo(repoDir, config.githubToken, config.repoCloneUrl!);
+    } catch (err) {
+      heads_up(`Could not pull latest — ${(err as Error).message}`);
+    }
+  } else {
+    fs.mkdirSync(repoDir, { recursive: true });
   }
 
   // Get passphrase for encrypting secrets
@@ -71,18 +77,31 @@ export async function pushCommand(): Promise<void> {
   const skillCount = writeSkillsToRepo(repoDir);
   sparkle(`Synced ${skillCount} skill file(s)`);
 
-  // Commit and push
+  // Push to remote
   sparkle(WITTY.pushing);
-  ensureGitConfig(repoDir);
-  try {
-    commitAndPush(repoDir, config.githubToken, config.repoCloneUrl, 'mcpocket: push');
-    celebrate(WITTY.pushDone);
-  } catch (err) {
-    oops(`Push failed: ${(err as Error).message}`);
-    process.exit(1);
+
+  if (config.storageType === 'gist') {
+    try {
+      const files = collectFilesFromDir(repoDir);
+      await updateGist(config.githubToken, config.gistId!, files);
+      celebrate(WITTY.pushDone);
+    } catch (err) {
+      oops(`Gist push failed: ${(err as Error).message}`);
+      process.exit(1);
+    }
+  } else {
+    ensureGitConfig(repoDir);
+    try {
+      commitAndPush(repoDir, config.githubToken, config.repoCloneUrl!, 'mcpocket: push');
+      celebrate(WITTY.pushDone);
+    } catch (err) {
+      oops(`Push failed: ${(err as Error).message}`);
+      process.exit(1);
+    }
   }
 
   section('Summary');
+  stat('Storage', config.storageType === 'gist' ? `gist (${config.gistUrl})` : `repo (${config.repoHtmlUrl})`);
   stat('MCPs', serverCount.toString());
   stat('Plugins', `${manifestCount} manifest file(s)`);
   stat('Agents', agentCount.toString());
