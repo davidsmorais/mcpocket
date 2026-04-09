@@ -3,15 +3,28 @@
  * Because syncing your AI setup should feel like magic, not homework.
  */
 
-const POCKET_ART = `
-  ╭─────────────────────────╮
-  │  ┌─────────┐            │
-  │  │ mcpocket│  ✨        │
-  │  └────┬────┘            │
-  │       │  Your AI setup. │
-  │       │  Every pocket.  │
-  ╰───────┴─────────────────╯
-`;
+const BANNER_LINES = [
+  { color: 36, text: '                 .------------------------.' },
+  { color: 36, text: String.raw`            .---/  .------------------.  \---.` },
+  { color: 35, text: String.raw`         .-'   /  /   .-''''''-.      \  \   '-.` },
+  { color: 35, text: String.raw`       .'     /  /   /  .--.    \      \  \     '.` },
+  { color: 36, text: String.raw`      /      /  /   |  / /\ \    |      \  \      \ ` },
+  { color: 36, text: '     ;      |  |    | | |  | |   |        |  |      ;' },
+  { color: 33, text: String.raw`     |      |  |    | |  /\/ |   |   /\   |  |      |` },
+  { color: 33, text: String.raw`     ;      |  |    | |  \/  |   |  /__\  |  |      ;` },
+  { color: 36, text: String.raw`      \      \  \   |  \____/   /      /  /      /` },
+  { color: 35, text: String.raw`       '.     \  \   '-._____.-'     /  /     .'` },
+  { color: 35, text: String.raw`         '-.   \  '----------------'  /   .-'` },
+  { color: 36, text: String.raw`            '---\____________________/---'` },
+  { color: 34, text: '' },
+  { color: 34, text: ' __  __  ____ ____   ___   ____ _  _______ _____ ' },
+  { color: 34, text: String.raw`|  \/  |/ ___|  _ \ / _ \ / ___| |/ / ____|_   _|` },
+  { color: 34, text: String.raw`| |\/| | |   | |_) | | | | |   | ' /|  _|   | |  ` },
+  { color: 34, text: String.raw`| |  | | |___|  __/| |_| | |___| . \| |___  | |  ` },
+  { color: 34, text: String.raw`|_|  |_|\____|_|    \___/ \____|_|\_\_____| |_|  ` },
+  { color: 37, text: '' },
+  { color: 37, text: '              Your AI setup. Every pocket.' },
+] as const;
 
 const FRAMES_SYNC = ['◐', '◓', '◑', '◒'];
 const FRAMES_SPARKLE = ['✦', '✧', '✦', '★', '✧', '⋆'];
@@ -21,7 +34,11 @@ const FRAMES_ROCKET = ['🚀', '🌟', '✨', '💫'];
  * Print the mcpocket ASCII art banner — a friendly hello.
  */
 export function printBanner(): void {
-  console.log('\x1b[36m' + POCKET_ART + '\x1b[0m');
+  console.log('');
+  for (const line of BANNER_LINES) {
+    console.log(`\x1b[${line.color}m${line.text}\x1b[0m`);
+  }
+  console.log('');
 }
 
 /**
