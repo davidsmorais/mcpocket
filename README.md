@@ -4,6 +4,10 @@
   <img src="https://img.shields.io/github/license/davidsmorais/carry-on" alt="license" />
 </p>
 
+<p align="center">
+  <img src="./logo.png" alt="mcpocket logo" width="200" />
+</p>
+
 # mcpocket
 
 > Your AI setup. Every pocket. ✨
