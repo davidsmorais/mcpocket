@@ -109,13 +109,19 @@ export async function pullCommand(): Promise<void> {
 
   // Apply agents
   sparkle(WITTY.readingAgents);
-  const agentCount = applyAgentsFromRepo(repoDir);
-  sparkle(`Restored ${agentCount} agent file(s)`);
+  const agentResult = applyAgentsFromRepo(repoDir);
+  sparkle(`Restored ${agentResult.synced} agent file(s)`);
+  if (agentResult.removed > 0) {
+    sparkle(`Removed ${agentResult.removed} stale local agent file(s)`);
+  }
 
   // Apply skills
   sparkle(WITTY.readingSkills);
-  const skillCount = applySkillsFromRepo(repoDir);
-  sparkle(`Restored ${skillCount} skill file(s)`);
+  const skillResult = applySkillsFromRepo(repoDir);
+  sparkle(`Restored ${skillResult.synced} skill file(s)`);
+  if (skillResult.removed > 0) {
+    sparkle(`Removed ${skillResult.removed} stale local skill file(s)`);
+  }
 
   // Summary
   celebrate(WITTY.pullDone);
@@ -123,8 +129,8 @@ export async function pullCommand(): Promise<void> {
   section('Summary');
   stat('MCPs', `${serverCount} servers → ${updatedClients.length} client(s)`);
   stat('Plugins', `${updatedManifests.length} manifest file(s)`);
-  stat('Agents', agentCount.toString());
-  stat('Skills', skillCount.toString());
+  stat('Agents', agentResult.synced.toString());
+  stat('Skills', skillResult.synced.toString());
 
   if (updatedClients.length > 0) {
     console.log('\n  Updated clients:');

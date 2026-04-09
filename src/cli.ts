@@ -3,6 +3,7 @@ import { Command } from 'commander';
 import { initCommand } from './commands/init.js';
 import { pushCommand } from './commands/push.js';
 import { pullCommand } from './commands/pull.js';
+import { dedupeCommand } from './commands/dedupe.js';
 import { statusCommand } from './commands/status.js';
 import { printBanner, oops } from './utils/sparkle.js';
 
@@ -29,6 +30,12 @@ program
   .command('pull')
   .description('Unpack your AI setup from the cloud pocket')
   .action(() => pullCommand().catch(die));
+
+program
+  .command('de-dupe')
+  .alias('dedupe')
+  .description('Clean stale synced files from your pocket and local folders')
+  .action(() => dedupeCommand().catch(die));
 
 program
   .command('status')

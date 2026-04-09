@@ -2,6 +2,11 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { getClaudeHomeDir } from '../utils/paths.js';
 
+export interface PluginWriteResult {
+  synced: number;
+  removed: number;
+}
+
 export interface InstalledPlugin {
   name: string;
   version?: string;
@@ -39,12 +44,28 @@ export function readPluginManifests(): Record<string, unknown> {
 }
 
 /** Write plugin manifest files into a repo directory */
-export function writePluginManifestsToRepo(manifests: Record<string, unknown>, repoDir: string): void {
+export function writePluginManifestsToRepo(manifests: Record<string, unknown>, repoDir: string): PluginWriteResult {
+  let synced = 0;
   for (const [relPath, content] of Object.entries(manifests)) {
     const fullPath = path.join(repoDir, relPath);
     fs.mkdirSync(path.dirname(fullPath), { recursive: true });
     fs.writeFileSync(fullPath, JSON.stringify(content, null, 2), 'utf8');
+    synced++;
   }
+
+  let removed = 0;
+  for (const relPath of PLUGIN_FILES) {
+    if (relPath in manifests) {
+      continue;
+    }
+    const fullPath = path.join(repoDir, relPath);
+    if (fs.existsSync(fullPath)) {
+      fs.rmSync(fullPath, { force: true });
+      removed++;
+    }
+  }
+
+  return { synced, removed };
 }
 
 /** Read plugin manifests from repo directory */

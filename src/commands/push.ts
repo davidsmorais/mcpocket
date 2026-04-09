@@ -10,6 +10,7 @@ import { mergeMcpSources, buildPortableConfig } from '../sync/mcp.js';
 import { readPluginManifests, writePluginManifestsToRepo } from '../sync/plugins.js';
 import { writeAgentsToRepo } from '../sync/agents.js';
 import { writeSkillsToRepo } from '../sync/skills.js';
+import { prunePocketDir } from '../sync/pocket.js';
 import { askSecret } from '../utils/prompt.js';
 import { sparkle, celebrate, section, stat, oops, heads_up, WITTY } from '../utils/sparkle.js';
 
@@ -29,6 +30,11 @@ export async function pushCommand(): Promise<void> {
     }
   } else {
     fs.mkdirSync(repoDir, { recursive: true });
+  }
+
+  const prunedEntries = prunePocketDir(repoDir);
+  if (prunedEntries > 0) {
+    sparkle(`Removed ${prunedEntries} stale pocket entr${prunedEntries === 1 ? 'y' : 'ies'}`);
   }
 
   // Get passphrase for encrypting secrets
@@ -65,17 +71,26 @@ export async function pushCommand(): Promise<void> {
   const manifests = readPluginManifests();
   const manifestCount = Object.keys(manifests).length;
   sparkle(`Found ${manifestCount} plugin manifest file(s)`);
-  writePluginManifestsToRepo(manifests, repoDir);
+  const pluginResult = writePluginManifestsToRepo(manifests, repoDir);
+  if (pluginResult.removed > 0) {
+    sparkle(`Removed ${pluginResult.removed} stale plugin manifest file(s) from the pocket`);
+  }
 
   // Sync agents
   sparkle(WITTY.readingAgents);
-  const agentCount = writeAgentsToRepo(repoDir);
-  sparkle(`Synced ${agentCount} agent file(s)`);
+  const agentResult = writeAgentsToRepo(repoDir);
+  sparkle(`Synced ${agentResult.synced} agent file(s)`);
+  if (agentResult.removed > 0) {
+    sparkle(`Removed ${agentResult.removed} stale agent file(s) from the pocket`);
+  }
 
   // Sync skills
   sparkle(WITTY.readingSkills);
-  const skillCount = writeSkillsToRepo(repoDir);
-  sparkle(`Synced ${skillCount} skill file(s)`);
+  const skillResult = writeSkillsToRepo(repoDir);
+  sparkle(`Synced ${skillResult.synced} skill file(s)`);
+  if (skillResult.removed > 0) {
+    sparkle(`Removed ${skillResult.removed} stale skill file(s) from the pocket`);
+  }
 
   // Push to remote
   sparkle(WITTY.pushing);
@@ -104,7 +119,7 @@ export async function pushCommand(): Promise<void> {
   stat('Storage', config.storageType === 'gist' ? `gist (${config.gistUrl})` : `repo (${config.repoHtmlUrl})`);
   stat('MCPs', serverCount.toString());
   stat('Plugins', `${manifestCount} manifest file(s)`);
-  stat('Agents', agentCount.toString());
-  stat('Skills', skillCount.toString());
+  stat('Agents', agentResult.synced.toString());
+  stat('Skills', skillResult.synced.toString());
   console.log('');
 }

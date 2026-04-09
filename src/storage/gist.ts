@@ -1,5 +1,6 @@
 import * as fs from 'fs';
 import * as path from 'path';
+import { mirrorFileMapToDir } from '../utils/files.js';
 
 const GITHUB_API = 'https://api.github.com';
 
@@ -51,10 +52,24 @@ export async function updateGist(
     gistFiles[name] = { content };
   }
 
+  const existingFiles = await fetchGist(token, gistId);
+  for (const name of Object.keys(existingFiles)) {
+    if (!(name in files)) {
+      gistFiles[name] = { content: '' };
+    }
+  }
+
   const res = await fetch(`${GITHUB_API}/gists/${gistId}`, {
     method: 'PATCH',
     headers: headers(token),
-    body: JSON.stringify({ files: gistFiles }),
+    body: JSON.stringify({
+      files: Object.fromEntries(
+        Object.entries(gistFiles).map(([name, file]) => [
+          name,
+          name in files ? file : null,
+        ])
+      ),
+    }),
   });
 
   if (!res.ok) {
@@ -123,10 +138,10 @@ export function writeGistFilesToDir(
   dir: string,
   files: Record<string, string>,
 ): void {
-  for (const [key, content] of Object.entries(files)) {
-    const relPath = key.split('__').join(path.sep);
-    const fullPath = path.join(dir, relPath);
-    fs.mkdirSync(path.dirname(fullPath), { recursive: true });
-    fs.writeFileSync(fullPath, content, 'utf8');
-  }
+  const expandedFiles = Object.fromEntries(
+    Object.entries(files).map(([key, content]) => [key.split('__').join(path.sep), content])
+  );
+  mirrorFileMapToDir(dir, expandedFiles, {
+    protectedTopLevelNames: new Set(['.git']),
+  });
 }

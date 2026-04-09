@@ -1,6 +1,8 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { getClaudeHomeDir } from '../utils/paths.js';
+import { mirrorDirectory } from '../utils/files.js';
+import type { SyncResult } from './agents.js';
 
 const SKILLS_DIR = 'skills';
 
@@ -16,50 +18,59 @@ function shouldSkip(name: string): boolean {
 }
 
 /** Copy skills/ from ~/.claude/skills/ to repo/skills/ (excluding node_modules) */
-export function writeSkillsToRepo(repoDir: string): number {
+export function writeSkillsToRepo(repoDir: string): SyncResult {
   const source = path.join(getClaudeHomeDir(), SKILLS_DIR);
   const dest = path.join(repoDir, SKILLS_DIR);
 
   if (!fs.existsSync(source)) {
-    return 0;
+    const removed = removeManagedDir(dest);
+    return { synced: 0, removed };
   }
 
-  return copyDirCounted(source, dest);
+  return mirrorDirectory(source, dest, {
+    includeDirectory: (relPath) => !shouldSkip(path.basename(relPath)),
+    includeFile: (relPath) => !shouldSkip(path.basename(relPath)),
+  });
 }
 
 /** Copy skills/ from repo/skills/ to ~/.claude/skills/ (overwrite, excluding node_modules) */
-export function applySkillsFromRepo(repoDir: string): number {
+export function applySkillsFromRepo(repoDir: string): SyncResult {
   const source = path.join(repoDir, SKILLS_DIR);
   const dest = path.join(getClaudeHomeDir(), SKILLS_DIR);
 
   if (!fs.existsSync(source)) {
+    const removed = removeManagedDir(dest);
+    return { synced: 0, removed };
+  }
+
+  return mirrorDirectory(source, dest, {
+    includeDirectory: (relPath) => !shouldSkip(path.basename(relPath)),
+    includeFile: (relPath) => !shouldSkip(path.basename(relPath)),
+  });
+}
+
+function removeManagedDir(dir: string): number {
+  if (!fs.existsSync(dir)) {
     return 0;
   }
 
-  return copyDirCounted(source, dest);
+  const removed = countManagedFiles(dir);
+  fs.rmSync(dir, { recursive: true, force: true });
+  return removed;
 }
 
-function copyDirCounted(src: string, dest: string): number {
+function countManagedFiles(dir: string): number {
   let count = 0;
-  copyDir(src, dest, () => { count++; });
-  return count;
-}
-
-function copyDir(src: string, dest: string, onFile: () => void): void {
-  if (!fs.existsSync(src)) return;
-  fs.mkdirSync(dest, { recursive: true });
-
-  for (const entry of fs.readdirSync(src, { withFileTypes: true })) {
-    if (shouldSkip(entry.name)) continue;
-
-    const srcPath = path.join(src, entry.name);
-    const destPath = path.join(dest, entry.name);
-
+  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+    if (shouldSkip(entry.name)) {
+      continue;
+    }
+    const fullPath = path.join(dir, entry.name);
     if (entry.isDirectory()) {
-      copyDir(srcPath, destPath, onFile);
+      count += countManagedFiles(fullPath);
     } else if (entry.isFile()) {
-      fs.copyFileSync(srcPath, destPath);
-      onFile();
+      count++;
     }
   }
+  return count;
 }

@@ -29,6 +29,7 @@ You install 8 MCP servers, configure your Claude Code plugins, and build up a li
 - **End-to-end encryption** — all secrets (API keys, tokens in MCP `env` vars) are encrypted with AES-256-GCM using a passphrase you choose
 - **Cross-platform paths** — Windows ↔ Linux ↔ macOS paths round-trip seamlessly
 - **Additive pull** — pulling merges remote servers into your local config without overwriting anything
+- **De-duplicated file sync** — push/pull mirror synced files so stale agent, skill, and plugin files don't pile up
 - **Zero dependencies on external services** — only GitHub and Git
 
 ---
@@ -59,7 +60,10 @@ mcpocket push
 # 3. Pull on a new machine
 mcpocket pull
 
-# 4. Check sync status
+# 4. Clean up stale synced files if needed
+mcpocket de-dupe
+
+# 5. Check sync status
 mcpocket status
 ```
 
@@ -123,6 +127,18 @@ mcpocket pull
 | OpenCode | `~/.config/opencode/config.json` |
 
 Pull is **additive** — it adds servers that exist remotely but not locally, without overwriting your existing local config. Restart Claude Desktop after pulling to apply MCP changes.
+
+For synced files, pull also removes stale agent and skill files that were previously synced but no longer exist in your pocket.
+
+### `mcpocket de-dupe`
+
+Refreshes the pocket, mirrors the current synced files, removes stale duplicates on both sides, and writes the cleaned result back to your configured backend.
+
+```bash
+mcpocket de-dupe
+```
+
+Use this if you already have duplicate or renamed agent/skill/plugin files from earlier syncs. In normal use, `push` and `pull` now keep these folders de-duplicated automatically.
 
 ### `mcpocket status`
 

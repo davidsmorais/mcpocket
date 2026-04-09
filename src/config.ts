@@ -46,7 +46,7 @@ export function writeConfig(config: McpocketConfig): void {
   }
 }
 
-/** Local clone directory */
+/** Local staging directory for synced pocket contents */
 export function getLocalRepoDir(): string {
   return path.join(os.homedir(), '.mcpocket', 'repo');
 }

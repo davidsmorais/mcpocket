@@ -1,69 +1,75 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { getClaudeHomeDir } from '../utils/paths.js';
+import { mirrorDirectory } from '../utils/files.js';
 
 const AGENTS_DIR = 'agents';
 
+export interface SyncResult {
+  synced: number;
+  removed: number;
+}
+
 /** Copy agents/ from ~/.claude/agents/ to repo/agents/ */
-export function writeAgentsToRepo(repoDir: string): number {
+export function writeAgentsToRepo(repoDir: string): SyncResult {
   const source = path.join(getClaudeHomeDir(), AGENTS_DIR);
   const dest = path.join(repoDir, AGENTS_DIR);
 
   if (!fs.existsSync(source)) {
-    return 0;
+    const removed = removeManagedDir(dest);
+    return { synced: 0, removed };
   }
 
-  let count = 0;
-  copyDir(source, dest, (relPath) => {
-    // Only sync .md files from agents
-    if (relPath.endsWith('.md')) {
-      count++;
-      return true;
-    }
-    // Skip .git, node_modules, CI dirs
-    const base = path.basename(relPath);
-    return !base.startsWith('.') && base !== 'node_modules';
+  return mirrorDirectory(source, dest, {
+    includeFile: (relPath) => relPath.endsWith('.md'),
+    includeDirectory: (relPath) => {
+      const base = path.basename(relPath);
+      return !base.startsWith('.') && base !== 'node_modules';
+    },
   });
-
-  return count;
 }
 
 /** Copy agents/ from repo/agents/ to ~/.claude/agents/ (overwrite) */
-export function applyAgentsFromRepo(repoDir: string): number {
+export function applyAgentsFromRepo(repoDir: string): SyncResult {
   const source = path.join(repoDir, AGENTS_DIR);
   const dest = path.join(getClaudeHomeDir(), AGENTS_DIR);
 
   if (!fs.existsSync(source)) {
+    const removed = removeManagedDir(dest);
+    return { synced: 0, removed };
+  }
+
+  return mirrorDirectory(source, dest, {
+    includeFile: (relPath) => relPath.endsWith('.md'),
+    includeDirectory: (relPath) => {
+      const base = path.basename(relPath);
+      return !base.startsWith('.') && base !== 'node_modules';
+    },
+  });
+}
+
+function removeManagedDir(dir: string): number {
+  if (!fs.existsSync(dir)) {
     return 0;
   }
 
-  let count = 0;
-  copyDir(source, dest, (relPath) => {
-    if (relPath.endsWith('.md')) {
-      count++;
-      return true;
-    }
-    const base = path.basename(relPath);
-    return !base.startsWith('.') && base !== 'node_modules';
-  });
-
-  return count;
+  const removed = countManagedFiles(dir);
+  fs.rmSync(dir, { recursive: true, force: true });
+  return removed;
 }
 
-function copyDir(src: string, dest: string, filter: (relPath: string) => boolean): void {
-  if (!fs.existsSync(src)) return;
-  fs.mkdirSync(dest, { recursive: true });
-
-  for (const entry of fs.readdirSync(src, { withFileTypes: true })) {
-    const srcPath = path.join(src, entry.name);
-    const destPath = path.join(dest, entry.name);
-
-    if (!filter(entry.name)) continue;
-
+function countManagedFiles(dir: string): number {
+  let count = 0;
+  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+    if (entry.name.startsWith('.') || entry.name === 'node_modules') {
+      continue;
+    }
+    const fullPath = path.join(dir, entry.name);
     if (entry.isDirectory()) {
-      copyDir(srcPath, destPath, filter);
-    } else if (entry.isFile()) {
-      fs.copyFileSync(srcPath, destPath);
+      count += countManagedFiles(fullPath);
+    } else if (entry.isFile() && entry.name.endsWith('.md')) {
+      count++;
     }
   }
+  return count;
 }
