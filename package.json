@@ -28,7 +28,7 @@
     "dotfiles",
     "opencode"
   ],
-  "author": "davidsmorais",
+  "author": "David Morais <david@davidmorais.com>",
   "license": "MIT",
   "repository": {
     "type": "git",
