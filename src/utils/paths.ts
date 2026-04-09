@@ -120,6 +120,41 @@ export function getOpenCodeConfigPath(): string {
 }
 
 /**
+ * Get the Cursor global MCP config path
+ */
+export function getCursorConfigPath(): string {
+  return path.join(HOME, '.cursor', 'mcp.json');
+}
+
+/**
+ * Get the Codex config path
+ */
+export function getCodexConfigPath(): string {
+  return path.join(HOME, '.codex', 'config.toml');
+}
+
+/**
+ * Get the Antigravity MCP config path
+ */
+export function getAntigravityConfigPath(): string {
+  return path.join(HOME, '.gemini', 'antigravity', 'mcp_config.json');
+}
+
+/**
+ * Get the VS Code user MCP config path used by Copilot tools.
+ */
+export function getCopilotCliConfigPath(): string {
+  if (process.platform === 'win32') {
+    const appData = process.env['APPDATA'] || path.join(HOME, 'AppData', 'Roaming');
+    return path.join(appData, 'Code', 'User', 'mcp.json');
+  }
+  if (process.platform === 'darwin') {
+    return path.join(HOME, 'Library', 'Application Support', 'Code', 'User', 'mcp.json');
+  }
+  return path.join(HOME, '.config', 'Code', 'User', 'mcp.json');
+}
+
+/**
  * Get the mcpocket config directory
  */
 export function getMcpocketConfigDir(): string {

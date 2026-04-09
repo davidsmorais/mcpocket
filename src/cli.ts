@@ -5,6 +5,7 @@ import { pushCommand } from './commands/push.js';
 import { pullCommand } from './commands/pull.js';
 import { dedupeCommand } from './commands/dedupe.js';
 import { statusCommand } from './commands/status.js';
+import { PROVIDER_OPTION_FLAGS } from './clients/providers.js';
 import { printBanner, oops } from './utils/sparkle.js';
 
 const program = new Command();
@@ -24,12 +25,28 @@ program
 program
   .command('push')
   .description('Tuck your AI setup into the cloud pocket')
-  .action(() => pushCommand().catch(die));
+
+for (const provider of PROVIDER_OPTION_FLAGS) {
+  program.commands.find((command) => command.name() === 'push')?.option(provider.flag, provider.description);
+}
+
+program
+  .commands
+  .find((command) => command.name() === 'push')
+  ?.action((options) => pushCommand(options).catch(die));
 
 program
   .command('pull')
   .description('Unpack your AI setup from the cloud pocket')
-  .action(() => pullCommand().catch(die));
+
+for (const provider of PROVIDER_OPTION_FLAGS) {
+  program.commands.find((command) => command.name() === 'pull')?.option(provider.flag, provider.description);
+}
+
+program
+  .commands
+  .find((command) => command.name() === 'pull')
+  ?.action((options) => pullCommand(options).catch(die));
 
 program
   .command('de-dupe')

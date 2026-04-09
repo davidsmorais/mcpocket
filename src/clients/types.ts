@@ -1,7 +1,23 @@
 export interface McpServerConfig {
-  command: string;
+  type?: string;
+  command?: string;
   args?: string[];
   env?: Record<string, string>;
+  cwd?: string;
+  url?: string;
+  headers?: Record<string, string>;
+  http_headers?: Record<string, string>;
+  env_http_headers?: Record<string, string>;
+  bearer_token_env_var?: string;
+  enabled?: boolean;
+  required?: boolean;
+  startup_timeout_sec?: number;
+  tool_timeout_sec?: number;
+  enabled_tools?: string[];
+  disabled_tools?: string[];
+  scopes?: string[];
+  oauth_resource?: string;
+  tools?: Record<string, unknown>;
   [key: string]: unknown;
 }
 
@@ -29,4 +45,23 @@ export interface OpenCodeConfig {
     servers?: McpServersMap;
   };
   [key: string]: unknown;
+}
+
+export type ProviderId =
+  | 'claude-desktop'
+  | 'claude-code'
+  | 'opencode'
+  | 'copilot-cli'
+  | 'cursor'
+  | 'codex'
+  | 'antigravity';
+
+export interface ProviderDefinition {
+  id: ProviderId;
+  displayName: string;
+  optionName: string;
+  syncsClaudeHomeAssets: boolean;
+  getConfigPath(): string;
+  readMcpServers(): McpServersMap;
+  writeMcpServers(servers: McpServersMap): void;
 }

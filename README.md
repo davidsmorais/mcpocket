@@ -24,9 +24,10 @@ You install 8 MCP servers, configure your Claude Code plugins, and build up a li
 
 ## Features
 
-- **Multi-client sync** — Claude Desktop, Claude Code, and OpenCode configs in one shot
+- **Multi-client sync** — Claude Desktop, Claude Code, OpenCode, Copilot CLI, Cursor, Codex, and Antigravity configs in one shot
 - **Two storage backends** — private GitHub repo (full git history) or lightweight GitHub Gist
-- **End-to-end encryption** — all secrets (API keys, tokens in MCP `env` vars) are encrypted with AES-256-GCM using a passphrase you choose
+- **Provider-scoped sync** — target one or more providers with flags like `--copilot-cli` or `--opencode`
+- **End-to-end encryption** — secrets in MCP `env`, `headers`, and `http_headers` are encrypted with AES-256-GCM using a passphrase you choose
 - **Cross-platform paths** — Windows ↔ Linux ↔ macOS paths round-trip seamlessly
 - **Additive pull** — pulling merges remote servers into your local config without overwriting anything
 - **De-duplicated file sync** — push/pull mirror synced files so stale agent, skill, and plugin files don't pile up
@@ -109,6 +110,18 @@ Reads MCP configs, plugin manifests, agents, and skills from the current machine
 mcpocket push
 ```
 
+Target specific providers by passing one or more flags:
+
+```bash
+mcpocket push --copilot-cli
+mcpocket push --cursor --codex
+```
+
+When provider flags are present, they scope the whole command:
+
+- Only the selected providers' MCP configs are read and packed into `mcp-config.json`
+- Claude home assets (`~/.claude/plugins`, `~/.claude/agents`, `~/.claude/skills`) are only synced when `--claude-code` is included
+
 - In **repo mode**: commits and pushes to your private GitHub repo.
 - In **gist mode**: uploads files to your private GitHub Gist (directory structure is flattened with `__` separators).
 
@@ -120,11 +133,24 @@ Downloads your config from the remote pocket, decrypts secrets with your passphr
 mcpocket pull
 ```
 
+You can also pull into only the providers you want:
+
+```bash
+mcpocket pull --opencode
+mcpocket pull --cursor --copilot-cli
+```
+
+With provider flags, pull only writes MCP servers to those selected providers. Claude home assets are only restored when `--claude-code` is included.
+
 | Client | Config file |
 |---|---|
 | Claude Desktop | `claude_desktop_config.json` |
 | Claude Code | `~/.claude/settings.json` |
 | OpenCode | `~/.config/opencode/config.json` |
+| Copilot CLI | VS Code/Copilot user `mcp.json` |
+| Cursor | `~/.cursor/mcp.json` |
+| Codex | `~/.codex/config.toml` |
+| Antigravity | `~/.gemini/antigravity/mcp_config.json` |
 
 Pull is **additive** — it adds servers that exist remotely but not locally, without overwriting your existing local config. Restart Claude Desktop after pulling to apply MCP changes.
 
@@ -168,10 +194,12 @@ mcpocket status
 
 | Category | Source | Details |
 |---|---|---|
-| MCP server configs | Claude Desktop, Claude Code, OpenCode | Merged across all clients |
+| MCP server configs | Claude Desktop, Claude Code, OpenCode, Copilot CLI, Cursor, Codex, Antigravity | Merged across all selected providers |
 | Plugin manifests | `~/.claude/plugins/` | `installed_plugins.json`, `blocklist.json`, `known_marketplaces.json` |
 | Agents | `~/.claude/agents/` | All `*.md` files, recursively |
 | Skills | `~/.claude/skills/` | All files, recursively (excluding `node_modules`) |
+
+If you do not pass provider flags, `push` and `pull` operate on every supported provider. If you do pass flags, only those providers participate in the command.
 
 ### Never Synced
 

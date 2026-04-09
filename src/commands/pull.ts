@@ -1,31 +1,32 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { readConfig, getLocalRepoDir } from '../config.js';
-import { pullRepo, cloneRepo, ensureGitConfig } from '../storage/github.js';
+import { pullRepo, ensureGitConfig } from '../storage/github.js';
 import { fetchGist, writeGistFilesToDir } from '../storage/gist.js';
-import { writeClaudeDesktopMcpServers, getConfigPath as desktopPath } from '../clients/claude-desktop.js';
-import { writeClaudeCodeMcpServers, getSettingsPath } from '../clients/claude-code.js';
-import { writeOpenCodeMcpServers, getConfigPath as opencodePath } from '../clients/opencode.js';
+import { ALL_PROVIDERS } from '../clients/providers.js';
 import {
   additiveMerge,
   restoreFromPortableConfig,
 } from '../sync/mcp.js';
 import type { PortableMcpConfig } from '../sync/mcp.js';
-import { readClaudeDesktopMcpServers } from '../clients/claude-desktop.js';
-import { readClaudeCodeMcpServers } from '../clients/claude-code.js';
-import { readOpenCodeMcpServers } from '../clients/opencode.js';
 import { readPluginManifestsFromRepo, applyPluginManifests } from '../sync/plugins.js';
 import { applyAgentsFromRepo } from '../sync/agents.js';
 import { applySkillsFromRepo } from '../sync/skills.js';
+import { formatProviderList, resolveProviderSelection } from './provider-options.js';
+import type { ProviderFlagOptions } from './provider-options.js';
 import { askSecret } from '../utils/prompt.js';
 import { sparkle, celebrate, section, stat, oops, heads_up, WITTY } from '../utils/sparkle.js';
 
-export async function pullCommand(): Promise<void> {
+export async function pullCommand(options: ProviderFlagOptions = {}): Promise<void> {
   const config = readConfig();
   const repoDir = getLocalRepoDir();
+  const selection = resolveProviderSelection(options);
 
   // Pull or clone
   section('Pull');
+  if (selection.isFiltered) {
+    sparkle(`Sync scope: ${formatProviderList(selection.selected)}`);
+  }
   sparkle(WITTY.pulling);
 
   if (config.storageType === 'gist') {
@@ -75,58 +76,59 @@ export async function pullCommand(): Promise<void> {
   const serverCount = Object.keys(remoteServers).length;
   const updatedClients: string[] = [];
 
-  // Apply to Claude Desktop
-  const localDesktop = readClaudeDesktopMcpServers();
-  const mergedDesktop = additiveMerge(localDesktop, remoteServers);
-  if (Object.keys(mergedDesktop).length > Object.keys(localDesktop).length) {
-    writeClaudeDesktopMcpServers(mergedDesktop);
-    updatedClients.push(`Claude Desktop (${desktopPath()})`);
-  }
-
-  // Apply to Claude Code
-  const localCode = readClaudeCodeMcpServers();
-  const mergedCode = additiveMerge(localCode, remoteServers);
-  if (Object.keys(mergedCode).length > Object.keys(localCode).length) {
-    writeClaudeCodeMcpServers(mergedCode);
-    updatedClients.push(`Claude Code (${getSettingsPath()})`);
-  }
-
-  // Apply to OpenCode
-  const localOpenCode = readOpenCodeMcpServers();
-  const mergedOpenCode = additiveMerge(localOpenCode, remoteServers);
-  if (Object.keys(mergedOpenCode).length > Object.keys(localOpenCode).length) {
-    writeOpenCodeMcpServers(mergedOpenCode);
-    updatedClients.push(`OpenCode (${opencodePath()})`);
+  for (const provider of selection.selected) {
+    const localServers = provider.readMcpServers();
+    const mergedServers = additiveMerge(localServers, remoteServers);
+    if (Object.keys(mergedServers).length > Object.keys(localServers).length) {
+      provider.writeMcpServers(mergedServers);
+      updatedClients.push(`${provider.displayName} (${provider.getConfigPath()})`);
+    }
   }
 
   sparkle(`Restored ${serverCount} MCP server(s)`);
 
   // Apply plugin manifests
-  sparkle(WITTY.readingPlugins);
-  const manifests = readPluginManifestsFromRepo(repoDir);
-  const updatedManifests = applyPluginManifests(manifests);
-  sparkle(`Updated ${updatedManifests.length} manifest file(s)`);
+  let updatedManifests: string[] = [];
+  if (selection.syncsClaudeHomeAssets) {
+    sparkle(WITTY.readingPlugins);
+    const manifests = readPluginManifestsFromRepo(repoDir);
+    updatedManifests = applyPluginManifests(manifests);
+    sparkle(`Updated ${updatedManifests.length} manifest file(s)`);
+  } else if (selection.isFiltered) {
+    sparkle('Skipping Claude home plugin manifests for this provider selection');
+  }
 
   // Apply agents
-  sparkle(WITTY.readingAgents);
-  const agentResult = applyAgentsFromRepo(repoDir);
-  sparkle(`Restored ${agentResult.synced} agent file(s)`);
-  if (agentResult.removed > 0) {
-    sparkle(`Removed ${agentResult.removed} stale local agent file(s)`);
+  let agentResult = { synced: 0, removed: 0 };
+  if (selection.syncsClaudeHomeAssets) {
+    sparkle(WITTY.readingAgents);
+    agentResult = applyAgentsFromRepo(repoDir);
+    sparkle(`Restored ${agentResult.synced} agent file(s)`);
+    if (agentResult.removed > 0) {
+      sparkle(`Removed ${agentResult.removed} stale local agent file(s)`);
+    }
+  } else if (selection.isFiltered) {
+    sparkle('Skipping Claude home agents for this provider selection');
   }
 
   // Apply skills
-  sparkle(WITTY.readingSkills);
-  const skillResult = applySkillsFromRepo(repoDir);
-  sparkle(`Restored ${skillResult.synced} skill file(s)`);
-  if (skillResult.removed > 0) {
-    sparkle(`Removed ${skillResult.removed} stale local skill file(s)`);
+  let skillResult = { synced: 0, removed: 0 };
+  if (selection.syncsClaudeHomeAssets) {
+    sparkle(WITTY.readingSkills);
+    skillResult = applySkillsFromRepo(repoDir);
+    sparkle(`Restored ${skillResult.synced} skill file(s)`);
+    if (skillResult.removed > 0) {
+      sparkle(`Removed ${skillResult.removed} stale local skill file(s)`);
+    }
+  } else if (selection.isFiltered) {
+    sparkle('Skipping Claude home skills for this provider selection');
   }
 
   // Summary
   celebrate(WITTY.pullDone);
 
   section('Summary');
+  stat('Providers', formatProviderList(selection.selected));
   stat('MCPs', `${serverCount} servers → ${updatedClients.length} client(s)`);
   stat('Plugins', `${updatedManifests.length} manifest file(s)`);
   stat('Agents', agentResult.synced.toString());
@@ -137,7 +139,7 @@ export async function pullCommand(): Promise<void> {
     for (const c of updatedClients) {
       sparkle(c);
     }
-    heads_up('Restart Claude Desktop to apply MCP changes.');
+    heads_up('Restart affected apps to apply MCP changes.');
   }
   console.log('');
 }

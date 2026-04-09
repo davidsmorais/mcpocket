@@ -3,22 +3,27 @@ import * as path from 'path';
 import { readConfig, getLocalRepoDir } from '../config.js';
 import { pullRepo, commitAndPush, ensureGitConfig } from '../storage/github.js';
 import { collectFilesFromDir, updateGist } from '../storage/gist.js';
-import { readClaudeDesktopMcpServers } from '../clients/claude-desktop.js';
-import { readClaudeCodeMcpServers } from '../clients/claude-code.js';
-import { readOpenCodeMcpServers } from '../clients/opencode.js';
+import { ALL_PROVIDERS } from '../clients/providers.js';
 import { mergeMcpSources, buildPortableConfig } from '../sync/mcp.js';
 import { readPluginManifests, writePluginManifestsToRepo } from '../sync/plugins.js';
 import { writeAgentsToRepo } from '../sync/agents.js';
 import { writeSkillsToRepo } from '../sync/skills.js';
 import { prunePocketDir } from '../sync/pocket.js';
+import { formatProviderList, resolveProviderSelection } from './provider-options.js';
+import type { ProviderFlagOptions } from './provider-options.js';
 import { askSecret } from '../utils/prompt.js';
 import { sparkle, celebrate, section, stat, oops, heads_up, WITTY } from '../utils/sparkle.js';
 
-export async function pushCommand(): Promise<void> {
+export async function pushCommand(options: ProviderFlagOptions = {}): Promise<void> {
   const config = readConfig();
   const repoDir = getLocalRepoDir();
+  const selection = resolveProviderSelection(options);
 
   section('Push');
+
+  if (selection.isFiltered) {
+    sparkle(`Sync scope: ${formatProviderList(selection.selected)}`);
+  }
 
   // For repo mode, pull latest first to avoid conflicts
   if (config.storageType !== 'gist') {
@@ -50,12 +55,9 @@ export async function pushCommand(): Promise<void> {
   }
 
   sparkle(WITTY.readingMCP);
-  const desktop = readClaudeDesktopMcpServers();
-  const claudeCode = readClaudeCodeMcpServers();
-  const opencode = readOpenCodeMcpServers();
-  const merged = mergeMcpSources(desktop, claudeCode, opencode);
+  const merged = mergeMcpSources(...selection.selected.map((provider) => provider.readMcpServers()));
   const serverCount = Object.keys(merged).length;
-  sparkle(`Found ${serverCount} MCP server(s) across all clients`);
+  sparkle(`Found ${serverCount} MCP server(s) across ${selection.selected.length} provider(s)`);
 
   // Write mcp-config.json
   sparkle(WITTY.encrypting);
@@ -67,29 +69,45 @@ export async function pushCommand(): Promise<void> {
   );
 
   // Sync plugin manifests
-  sparkle(WITTY.readingPlugins);
-  const manifests = readPluginManifests();
-  const manifestCount = Object.keys(manifests).length;
-  sparkle(`Found ${manifestCount} plugin manifest file(s)`);
-  const pluginResult = writePluginManifestsToRepo(manifests, repoDir);
-  if (pluginResult.removed > 0) {
-    sparkle(`Removed ${pluginResult.removed} stale plugin manifest file(s) from the pocket`);
+  let manifestCount = 0;
+  let pluginResult = { synced: 0, removed: 0 };
+  if (selection.syncsClaudeHomeAssets) {
+    sparkle(WITTY.readingPlugins);
+    const manifests = readPluginManifests();
+    manifestCount = Object.keys(manifests).length;
+    sparkle(`Found ${manifestCount} plugin manifest file(s)`);
+    pluginResult = writePluginManifestsToRepo(manifests, repoDir);
+    if (pluginResult.removed > 0) {
+      sparkle(`Removed ${pluginResult.removed} stale plugin manifest file(s) from the pocket`);
+    }
+  } else if (selection.isFiltered) {
+    sparkle('Skipping Claude home plugin manifests for this provider selection');
   }
 
   // Sync agents
-  sparkle(WITTY.readingAgents);
-  const agentResult = writeAgentsToRepo(repoDir);
-  sparkle(`Synced ${agentResult.synced} agent file(s)`);
-  if (agentResult.removed > 0) {
-    sparkle(`Removed ${agentResult.removed} stale agent file(s) from the pocket`);
+  let agentResult = { synced: 0, removed: 0 };
+  if (selection.syncsClaudeHomeAssets) {
+    sparkle(WITTY.readingAgents);
+    agentResult = writeAgentsToRepo(repoDir);
+    sparkle(`Synced ${agentResult.synced} agent file(s)`);
+    if (agentResult.removed > 0) {
+      sparkle(`Removed ${agentResult.removed} stale agent file(s) from the pocket`);
+    }
+  } else if (selection.isFiltered) {
+    sparkle('Skipping Claude home agents for this provider selection');
   }
 
   // Sync skills
-  sparkle(WITTY.readingSkills);
-  const skillResult = writeSkillsToRepo(repoDir);
-  sparkle(`Synced ${skillResult.synced} skill file(s)`);
-  if (skillResult.removed > 0) {
-    sparkle(`Removed ${skillResult.removed} stale skill file(s) from the pocket`);
+  let skillResult = { synced: 0, removed: 0 };
+  if (selection.syncsClaudeHomeAssets) {
+    sparkle(WITTY.readingSkills);
+    skillResult = writeSkillsToRepo(repoDir);
+    sparkle(`Synced ${skillResult.synced} skill file(s)`);
+    if (skillResult.removed > 0) {
+      sparkle(`Removed ${skillResult.removed} stale skill file(s) from the pocket`);
+    }
+  } else if (selection.isFiltered) {
+    sparkle('Skipping Claude home skills for this provider selection');
   }
 
   // Push to remote
@@ -117,6 +135,7 @@ export async function pushCommand(): Promise<void> {
 
   section('Summary');
   stat('Storage', config.storageType === 'gist' ? `gist (${config.gistUrl})` : `repo (${config.repoHtmlUrl})`);
+  stat('Providers', formatProviderList(selection.selected));
   stat('MCPs', serverCount.toString());
   stat('Plugins', `${manifestCount} manifest file(s)`);
   stat('Agents', agentResult.synced.toString());

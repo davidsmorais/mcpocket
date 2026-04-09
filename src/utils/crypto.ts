@@ -76,10 +76,20 @@ export function encryptEnv(
   env: Record<string, string>,
   passphrase: string
 ): { encrypted: Record<string, string>; encryptedKeys: string[] } {
+  return encryptStringMap(env, passphrase);
+}
+
+/**
+ * Encrypt all string values in a string map.
+ */
+export function encryptStringMap(
+  values: Record<string, string>,
+  passphrase: string
+): { encrypted: Record<string, string>; encryptedKeys: string[] } {
   const encrypted: Record<string, string> = {};
   const encryptedKeys: string[] = [];
 
-  for (const [key, value] of Object.entries(env)) {
+  for (const [key, value] of Object.entries(values)) {
     if (value && !isEncrypted(value)) {
       encrypted[key] = encrypt(value, passphrase);
       encryptedKeys.push(key);
@@ -98,9 +108,19 @@ export function decryptEnv(
   env: Record<string, string>,
   passphrase: string
 ): Record<string, string> {
+  return decryptStringMap(env, passphrase);
+}
+
+/**
+ * Decrypt all encrypted values in a string map.
+ */
+export function decryptStringMap(
+  values: Record<string, string>,
+  passphrase: string
+): Record<string, string> {
   const decrypted: Record<string, string> = {};
 
-  for (const [key, value] of Object.entries(env)) {
+  for (const [key, value] of Object.entries(values)) {
     if (isEncrypted(value)) {
       decrypted[key] = decrypt(value, passphrase);
     } else {
