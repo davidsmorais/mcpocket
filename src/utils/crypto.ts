@@ -35,7 +35,7 @@ export function encrypt(plaintext: string, passphrase: string): string {
  */
 export function decrypt(encryptedValue: string, passphrase: string): string {
   if (!encryptedValue.startsWith(ENCRYPTED_PREFIX)) {
-    throw new Error('Value is not an encrypted carry-on secret');
+    throw new Error('Value is not an encrypted mcpocket secret');
   }
 
   const parts = encryptedValue.slice(ENCRYPTED_PREFIX.length).split(':');
@@ -62,7 +62,7 @@ export function decrypt(encryptedValue: string, passphrase: string): string {
 }
 
 /**
- * Returns true if the value is an encrypted carry-on secret.
+ * Returns true if the value is an encrypted mcpocket secret.
  */
 export function isEncrypted(value: string): boolean {
   return typeof value === 'string' && value.startsWith(ENCRYPTED_PREFIX);

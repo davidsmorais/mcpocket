@@ -122,8 +122,3 @@ export async function pullCommand(): Promise<void> {
   }
   console.log('');
 }
-
-  if (updatedManifests.length > 0) {
-    console.log('⚠  Restart Claude Code to trigger plugin installation.');
-  }
-}
