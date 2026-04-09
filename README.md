@@ -11,7 +11,7 @@ You install 8 MCP servers, configure your Claude Code plugins, and build up a li
 ## Install
 
 ```bash
-npm install -g carry-on
+npm install -g mcpocket
 ```
 
 ## Usage

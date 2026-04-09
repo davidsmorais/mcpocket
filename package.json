@@ -1,5 +1,5 @@
 {
-  "name": "carry-on",
+  "name": "mcpocket",
   "version": "0.1.0",
   "description": "Your AI setup. Everywhere you work. Syncs Claude Code agents, skills, plugins, and MCPs across machines.",
   "main": "dist/cli.js",
