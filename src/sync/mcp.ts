@@ -1,4 +1,4 @@
-import * as path from 'path';
+import * as path from 'node:path';
 import { encryptStringMap, decryptStringMap } from '../utils/crypto.js';
 import { normalizePath, expandPath, normalizeCommand, expandCommand, normalizeArgs, expandArgs } from '../utils/paths.js';
 import type { McpServersMap, McpServerConfig } from '../clients/types.js';

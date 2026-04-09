@@ -1,4 +1,4 @@
-import * as crypto from 'crypto';
+import * as crypto from 'node:crypto';
 
 const ENCRYPTED_PREFIX = 'ENCRYPTED:';
 const ALGORITHM = 'aes-256-gcm';
@@ -44,10 +44,10 @@ export function decrypt(encryptedValue: string, passphrase: string): string {
   }
 
   const [ivHex, saltHex, authTagHex, ciphertextHex] = parts;
-  const iv = Buffer.from(ivHex!, 'hex');
-  const salt = Buffer.from(saltHex!, 'hex');
-  const authTag = Buffer.from(authTagHex!, 'hex');
-  const ciphertext = Buffer.from(ciphertextHex!, 'hex');
+  const iv = Buffer.from(ivHex, 'hex');
+  const salt = Buffer.from(saltHex, 'hex');
+  const authTag = Buffer.from(authTagHex, 'hex');
+  const ciphertext = Buffer.from(ciphertextHex, 'hex');
 
   const key = crypto.scryptSync(passphrase, salt, KEY_LEN);
   const decipher = crypto.createDecipheriv(ALGORITHM, key, iv);

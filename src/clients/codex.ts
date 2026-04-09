@@ -1,5 +1,5 @@
-import * as fs from 'fs';
-import * as path from 'path';
+import * as fs from 'node:fs';
+import * as path from 'node:path';
 import * as TOML from '@iarna/toml';
 import { getCodexConfigPath } from '../utils/paths.js';
 import type { McpServersMap } from './types.js';
@@ -39,7 +39,7 @@ export function writeCodexMcpServers(servers: McpServersMap): void {
     fs.mkdirSync(dir, { recursive: true });
   }
 
-  config.mcp_servers = { ...(config.mcp_servers ?? {}), ...servers };
+  config.mcp_servers = servers;
   fs.writeFileSync(configPath, TOML.stringify(config as TOML.JsonMap), 'utf8');
 }
 

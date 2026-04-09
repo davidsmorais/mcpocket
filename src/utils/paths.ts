@@ -1,5 +1,5 @@
-import * as os from 'os';
-import * as path from 'path';
+import * as os from 'node:os';
+import * as path from 'node:path';
 
 const HOME = os.homedir();
 
@@ -60,7 +60,7 @@ export function expandCommand(cmd: string): string {
 export function normalizeArgs(args: string[]): string[] {
   return args.map(arg => {
     // If the arg looks like an absolute path (starts with / or X:\), normalize it
-    if (/^[a-zA-Z]:[\\\/]/.test(arg) || arg.startsWith('/')) {
+    if (/^[a-zA-Z]:[\\/]/.test(arg) || arg.startsWith('/')) {
       return normalizePath(arg);
     }
     return arg;
