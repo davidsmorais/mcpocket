@@ -1,0 +1,52 @@
+{
+  "name": "carry-on",
+  "version": "0.1.0",
+  "description": "Your AI setup. Everywhere you work. Syncs Claude Code agents, skills, plugins, and MCPs across machines.",
+  "main": "dist/cli.js",
+  "bin": {
+    "carry-on": "./dist/cli.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "prepublishOnly": "pnpm build"
+  },
+  "files": [
+    "dist/",
+    "README.md",
+    "LICENSE"
+  ],
+  "keywords": [
+    "claude",
+    "claude-code",
+    "mcp",
+    "ai",
+    "sync",
+    "agents",
+    "skills",
+    "plugins",
+    "dotfiles",
+    "opencode"
+  ],
+  "author": "davidsmorais",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/davidsmorais/carry-on.git"
+  },
+  "homepage": "https://github.com/davidsmorais/carry-on#readme",
+  "bugs": {
+    "url": "https://github.com/davidsmorais/carry-on/issues"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "type": "commonjs",
+  "dependencies": {
+    "commander": "^14.0.3"
+  },
+  "devDependencies": {
+    "@types/node": "^25.5.2",
+    "typescript": "^6.0.2"
+  }
+}
