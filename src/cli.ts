@@ -15,7 +15,7 @@ printBanner();
 program
   .name('mcpocket')
   .description('Your AI setup. Every pocket.\nSyncs agents, skills, plugins, and MCPs across all your machines like magic.')
-  .version('0.1.0');
+  .version('0.3.0');
 
 program
   .command('init')

@@ -19,6 +19,28 @@ function headers(token: string): Record<string, string> {
   };
 }
 
+/**
+ * Resolve a gist URL (https://gist.github.com/user/id) or raw ID to GistInfo,
+ * verifying it's accessible with the given token.
+ */
+export async function resolveGistInfo(token: string, urlOrId: string): Promise<GistInfo> {
+  const trimmed = urlOrId.trim();
+  // Extract ID from URL: https://gist.github.com/user/gistId
+  const urlMatch = trimmed.match(/gist\.github\.com\/[^/]+\/([a-f0-9]+)/i);
+  const gistId = urlMatch ? urlMatch[1] : trimmed;
+
+  const res = await fetch(`${GITHUB_API}/gists/${gistId}`, {
+    headers: headers(token),
+  });
+
+  if (!res.ok) {
+    throw new Error(`Could not access gist (${res.status}): ${await res.text()}`);
+  }
+
+  const data = await res.json() as { id: string; html_url: string };
+  return { id: data.id, htmlUrl: data.html_url };
+}
+
 /** Create a private gist as the sync target */
 export async function createGist(token: string): Promise<GistInfo> {
   const res = await fetch(`${GITHUB_API}/gists`, {
