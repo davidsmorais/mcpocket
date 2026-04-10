@@ -74,7 +74,7 @@ export async function updateGist(
     gistFiles[name] = { content };
   }
 
-  const existingFiles = await fetchGist(token, gistId);
+  const { files: existingFiles } = await fetchGist(token, gistId);
   for (const name of Object.keys(existingFiles)) {
     if (!(name in files)) {
       gistFiles[name] = { content: '' };
@@ -103,7 +103,7 @@ export async function updateGist(
 export async function fetchGist(
   token: string,
   gistId: string,
-): Promise<Record<string, string>> {
+): Promise<{ files: Record<string, string>; truncated: boolean }> {
   const res = await fetch(`${GITHUB_API}/gists/${gistId}`, {
     headers: headers(token),
   });
@@ -113,6 +113,8 @@ export async function fetchGist(
   }
 
   const data = await res.json() as {
+    truncated?: boolean;
+    owner?: { login: string };
     files: Record<string, { filename: string; content: string; truncated: boolean; raw_url: string }>;
   };
 
@@ -128,7 +130,20 @@ export async function fetchGist(
       files[name] = file.content;
     }
   }
-  return files;
+
+  // GitHub's API only returns up to 300 files per gist. When a gist has more
+  // than 300 files (e.g. many agents__* entries), files that sort later
+  // alphabetically — including mcp-config.json — may be omitted from the
+  // response. Fetch it directly via the raw URL so pull always works.
+  if (data.truncated && !('mcp-config.json' in files) && data.owner?.login) {
+    const rawUrl = `https://gist.githubusercontent.com/${data.owner.login}/${gistId}/raw/mcp-config.json`;
+    const rawRes = await fetch(rawUrl, { headers: headers(token) });
+    if (rawRes.ok) {
+      files['mcp-config.json'] = await rawRes.text();
+    }
+  }
+
+  return { files, truncated: data.truncated ?? false };
 }
 
 /**

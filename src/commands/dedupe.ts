@@ -22,7 +22,7 @@ export async function dedupeCommand(): Promise<void> {
 
   if (config.storageType === 'gist') {
     try {
-      const gistFiles = await fetchGist(config.githubToken, config.gistId!);
+      const { files: gistFiles } = await fetchGist(config.githubToken, config.gistId!);
       fs.mkdirSync(repoDir, { recursive: true });
       writeGistFilesToDir(repoDir, gistFiles);
     } catch (err) {
