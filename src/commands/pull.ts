@@ -90,9 +90,15 @@ export async function pullCommand(options: ProviderFlagOptions = {}): Promise<vo
 async function syncPocketToLocal(repoDir: string, config: ReturnType<typeof readConfig>): Promise<void> {
   if (config.storageType === 'gist') {
     try {
-      const gistFiles = await fetchGist(config.githubToken, config.gistId!);
+      const { files: gistFiles, truncated } = await fetchGist(config.githubToken, config.gistId!);
       fs.mkdirSync(repoDir, { recursive: true });
       writeGistFilesToDir(repoDir, gistFiles);
+      if (truncated) {
+        heads_up(
+          'Your gist has more than 300 files — GitHub only returns the first 300 via its API.\n' +
+          '  Some agents, skills, or plugins may not be synced. Consider switching to repo storage.'
+        );
+      }
       return;
     } catch (err) {
       oops((err as Error).message);
