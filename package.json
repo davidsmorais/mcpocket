@@ -1,6 +1,6 @@
 {
   "name": "mcpocket",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "Your AI setup. Every pocket. Syncs agents, skills, plugins, and MCPs across all your machines like magic.",
   "main": "dist/cli.js",
   "bin": {

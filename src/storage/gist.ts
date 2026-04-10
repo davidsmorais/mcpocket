@@ -113,12 +113,20 @@ export async function fetchGist(
   }
 
   const data = await res.json() as {
-    files: Record<string, { filename: string; content: string }>;
+    files: Record<string, { filename: string; content: string; truncated: boolean; raw_url: string }>;
   };
 
   const files: Record<string, string> = {};
   for (const [name, file] of Object.entries(data.files)) {
-    files[name] = file.content;
+    if (file.truncated) {
+      const rawRes = await fetch(file.raw_url, { headers: headers(token) });
+      if (!rawRes.ok) {
+        throw new Error(`Failed to fetch raw content for ${name} (${rawRes.status})`);
+      }
+      files[name] = await rawRes.text();
+    } else {
+      files[name] = file.content;
+    }
   }
   return files;
 }

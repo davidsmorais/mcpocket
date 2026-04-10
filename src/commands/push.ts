@@ -64,6 +64,7 @@ export async function pushCommand(options: ProviderFlagOptions = {}): Promise<vo
       const files = collectFilesFromDir(repoDir);
       await updateGist(config.githubToken, config.gistId!, files);
       celebrate(WITTY.pushDone);
+      heads_up(`Pocket URL: ${config.gistUrl}  ← save this to connect from another machine!`);
     } catch (err) {
       oops(`Gist push failed: ${(err as Error).message}`);
       process.exit(1);
