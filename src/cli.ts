@@ -5,6 +5,7 @@ import { pushCommand } from './commands/push.js';
 import { pullCommand } from './commands/pull.js';
 import { dedupeCommand } from './commands/dedupe.js';
 import { statusCommand } from './commands/status.js';
+import { setCommand } from './commands/set.js';
 import { PROVIDER_OPTION_FLAGS } from './clients/providers.js';
 import { printBanner, oops } from './utils/sparkle.js';
 
@@ -15,7 +16,7 @@ printBanner();
 program
   .name('mcpocket')
   .description('Your AI setup. Every pocket.\nSyncs agents, skills, plugins, and MCPs across all your machines like magic.')
-  .version('0.1.0');
+  .version('0.3.1');
 
 program
   .command('init')
@@ -53,6 +54,11 @@ program
   .alias('dedupe')
   .description('Clean stale synced files from your pocket and local folders')
   .action(() => dedupeCommand().catch(die));
+
+program
+  .command('set <pocketUrl>')
+  .description('Point mcpocket at a different pocket (gist URL, gist ID, repo URL, or owner/repo)')
+  .action((url: string) => setCommand(url).catch(die));
 
 program
   .command('status')

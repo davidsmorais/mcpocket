@@ -1,5 +1,5 @@
-import { getAuthenticatedUser, createRepo, cloneRepo, ensureGitConfig } from '../storage/github.js';
-import { createGist } from '../storage/gist.js';
+import { getAuthenticatedUser, createRepo, resolveRepoInfo, cloneRepo, ensureGitConfig } from '../storage/github.js';
+import { createGist, resolveGistInfo } from '../storage/gist.js';
 import { writeConfig, configExists, getLocalRepoDir } from '../config.js';
 import type { StorageType } from '../config.js';
 import { ask, askSecret } from '../utils/prompt.js';
@@ -47,15 +47,37 @@ export async function initCommand(): Promise<void> {
   const storageChoice = await ask('  Pick one [1/2]: ');
   const storageType: StorageType = storageChoice === '2' ? 'gist' : 'repo';
 
+  // Ask if they already have an existing pocket to connect to
+  console.log('');
+  const hasExisting = await ask('  Do you have an existing pocket to connect? [y/N] ');
+  const connectToExisting = hasExisting.toLowerCase() === 'y';
+
   if (storageType === 'gist') {
-    sparkle('Creating your private sync gist...');
-    let gistInfo: Awaited<ReturnType<typeof createGist>>;
-    try {
-      gistInfo = await createGist(token);
-      sparkle(`Pocket ready: ${gistInfo.htmlUrl}`);
-    } catch (err) {
-      oops((err as Error).message);
-      process.exit(1);
+    let gistInfo: { id: string; htmlUrl: string };
+
+    if (connectToExisting) {
+      const input = await ask('  Paste your gist URL or gist ID: ');
+      if (!input) {
+        oops('Gist URL or ID cannot be empty.');
+        process.exit(1);
+      }
+      sparkle(WITTY.verifying);
+      try {
+        gistInfo = await resolveGistInfo(token, input);
+        sparkle(`Connected to pocket: ${gistInfo.htmlUrl}`);
+      } catch (err) {
+        oops((err as Error).message);
+        process.exit(1);
+      }
+    } else {
+      sparkle('Creating your private sync gist...');
+      try {
+        gistInfo = await createGist(token);
+        sparkle(`Pocket ready: ${gistInfo.htmlUrl}`);
+      } catch (err) {
+        oops((err as Error).message);
+        process.exit(1);
+      }
     }
 
     // Ensure staging dir exists
@@ -70,15 +92,31 @@ export async function initCommand(): Promise<void> {
       gistUrl: gistInfo.htmlUrl,
     });
   } else {
-    // Create repo
-    sparkle('Creating your private sync pocket (mcpocket-sync)...');
     let repoInfo: Awaited<ReturnType<typeof createRepo>>;
-    try {
-      repoInfo = await createRepo(token, owner);
-      sparkle(`Pocket ready: ${repoInfo.htmlUrl}`);
-    } catch (err) {
-      oops((err as Error).message);
-      process.exit(1);
+
+    if (connectToExisting) {
+      const input = await ask('  Paste your repo URL (https://github.com/owner/repo) or owner/repo: ');
+      if (!input) {
+        oops('Repo URL cannot be empty.');
+        process.exit(1);
+      }
+      sparkle(WITTY.verifying);
+      try {
+        repoInfo = await resolveRepoInfo(token, input);
+        sparkle(`Connected to pocket: ${repoInfo.htmlUrl}`);
+      } catch (err) {
+        oops((err as Error).message);
+        process.exit(1);
+      }
+    } else {
+      sparkle('Creating your private sync pocket (mcpocket-sync)...');
+      try {
+        repoInfo = await createRepo(token, owner);
+        sparkle(`Pocket ready: ${repoInfo.htmlUrl}`);
+      } catch (err) {
+        oops((err as Error).message);
+        process.exit(1);
+      }
     }
 
     // Clone repo locally

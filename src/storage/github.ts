@@ -31,6 +31,34 @@ export async function getAuthenticatedUser(token: string): Promise<string> {
   return data.login;
 }
 
+/**
+ * Resolve a repo URL (https://github.com/owner/repo[.git]) or owner/repo string
+ * to RepoInfo, verifying it's accessible with the given token.
+ */
+export async function resolveRepoInfo(token: string, urlOrName: string): Promise<RepoInfo> {
+  let fullName = urlOrName.trim().replace(/\.git$/, '');
+  const urlMatch = fullName.match(/github\.com\/([^/]+\/[^/]+)/);
+  if (urlMatch) {
+    fullName = urlMatch[1];
+  }
+
+  const res = await fetch(`${GITHUB_API}/repos/${fullName}`, {
+    headers: headers(token),
+  });
+
+  if (!res.ok) {
+    throw new Error(`Could not access repo (${res.status}): ${await res.text()}`);
+  }
+
+  const data = await res.json() as { full_name: string; clone_url: string; ssh_url: string; html_url: string };
+  return {
+    fullName: data.full_name,
+    cloneUrl: data.clone_url,
+    sshUrl: data.ssh_url,
+    htmlUrl: data.html_url,
+  };
+}
+
 /** Create a private repo named mcpocket-sync (idempotent — returns existing if 422) */
 export async function createRepo(token: string, owner: string): Promise<RepoInfo> {
   const repoName = 'mcpocket-sync';

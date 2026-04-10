@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.3.0] - 2026-04-10
+
+### Added
+- `mcpocket init` now asks if you have an existing pocket to connect to.
+- Paste a gist URL (`https://gist.github.com/user/id`) or raw gist ID to link an existing gist.
+- Paste a repo URL (`https://github.com/owner/repo`) or `owner/repo` to link an existing repo.
+- New `resolveGistInfo` and `resolveRepoInfo` helpers that validate and resolve existing remotes.
+
 ## [0.2.0] - 2026-04-09
 
 ### Added
