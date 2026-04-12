@@ -11,6 +11,41 @@ export function ask(question: string): Promise<string> {
   });
 }
 
+export interface MultiSelectOption<T> {
+  label: string;
+  value: T;
+}
+
+/**
+ * Show a numbered list of options and let the user pick a subset by typing
+ * comma-separated numbers (e.g. "1,3"). Pressing Enter with no input selects all.
+ * Returns the selected values.
+ */
+export async function askMultiSelect<T>(
+  question: string,
+  options: MultiSelectOption<T>[]
+): Promise<T[]> {
+  console.log(`\n  ${question}`);
+  options.forEach((opt, i) => {
+    console.log(`    [${i + 1}] ${opt.label}`);
+  });
+  const answer = await ask('  Select (comma-separated numbers, or Enter for all): ');
+
+  if (!answer.trim()) {
+    return options.map((o) => o.value);
+  }
+
+  const selected: T[] = [];
+  for (const part of answer.split(',')) {
+    const idx = parseInt(part.trim(), 10) - 1;
+    if (!Number.isNaN(idx) && idx >= 0 && idx < options.length) {
+      selected.push(options[idx].value);
+    }
+  }
+
+  return selected.length > 0 ? selected : options.map((o) => o.value);
+}
+
 /** Prompt for a hidden password (no echo) */
 export function askSecret(question: string): Promise<string> {
   return new Promise((resolve) => {

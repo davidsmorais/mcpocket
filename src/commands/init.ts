@@ -1,8 +1,9 @@
 import { getAuthenticatedUser, createRepo, resolveRepoInfo, cloneRepo, ensureGitConfig } from '../storage/github.js';
 import { createGist, resolveGistInfo } from '../storage/gist.js';
-import { writeConfig, configExists, getLocalRepoDir } from '../config.js';
-import type { StorageType } from '../config.js';
-import { ask, askSecret } from '../utils/prompt.js';
+import { writeConfig, configExists, getLocalRepoDir, ALL_SYNC_CATEGORIES } from '../config.js';
+import type { StorageType, SyncCategory } from '../config.js';
+import { ALL_PROVIDERS } from '../clients/providers.js';
+import { ask, askSecret, askMultiSelect } from '../utils/prompt.js';
 import { sparkle, celebrate, section, oops, heads_up, WITTY } from '../utils/sparkle.js';
 
 export async function initCommand(): Promise<void> {
@@ -85,11 +86,15 @@ export async function initCommand(): Promise<void> {
     const fs = await import('fs');
     fs.mkdirSync(localDir, { recursive: true });
 
+    const { syncCategories, syncProviders } = await askSyncScope();
+
     writeConfig({
       githubToken: token,
       storageType: 'gist',
       gistId: gistInfo.id,
       gistUrl: gistInfo.htmlUrl,
+      syncCategories,
+      syncProviders,
     });
   } else {
     let repoInfo: Awaited<ReturnType<typeof createRepo>>;
@@ -131,12 +136,16 @@ export async function initCommand(): Promise<void> {
       process.exit(1);
     }
 
+    const { syncCategories, syncProviders } = await askSyncScope();
+
     writeConfig({
       githubToken: token,
       storageType: 'repo',
       repoFullName: repoInfo.fullName,
       repoCloneUrl: repoInfo.cloneUrl,
       repoHtmlUrl: repoInfo.htmlUrl,
+      syncCategories,
+      syncProviders,
     });
   }
 
@@ -145,4 +154,28 @@ export async function initCommand(): Promise<void> {
   sparkle('mcpocket push   — tuck your setup into the cloud');
   sparkle('mcpocket pull   — unpack your setup on a new machine');
   console.log('');
+}
+
+async function askSyncScope(): Promise<{ syncCategories: SyncCategory[]; syncProviders: string[] }> {
+  section('Sync Scope');
+  sparkle('Choose what mcpocket will sync for you.');
+
+  const syncCategories = await askMultiSelect<SyncCategory>(
+    'Which categories should be synced?',
+    ALL_SYNC_CATEGORIES.map((cat) => ({
+      label: cat.charAt(0).toUpperCase() + cat.slice(1),
+      value: cat,
+    }))
+  );
+
+  let syncProviders: string[] = ALL_PROVIDERS.map((p) => p.id);
+
+  if (syncCategories.includes('mcps')) {
+    syncProviders = (await askMultiSelect(
+      'Which MCP providers should be synced?',
+      ALL_PROVIDERS.map((p) => ({ label: p.displayName, value: p.id }))
+    )) as string[];
+  }
+
+  return { syncCategories, syncProviders };
 }

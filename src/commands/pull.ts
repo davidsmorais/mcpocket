@@ -1,6 +1,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { readConfig, getLocalRepoDir } from '../config.js';
+import type { SyncCategory } from '../config.js';
 import { pullRepo, ensureGitConfig } from '../storage/github.js';
 import { fetchGist, writeGistFilesToDir } from '../storage/gist.js';
 import {
@@ -26,7 +27,10 @@ interface RestoredAssetSummary {
 export async function pullCommand(options: ProviderFlagOptions = {}): Promise<void> {
   const config = readConfig();
   const repoDir = getLocalRepoDir();
-  const selection = resolveProviderSelection(options);
+  const selection = resolveProviderSelection(options, config.syncProviders);
+  const activeCategories: Set<SyncCategory> = config.syncCategories
+    ? new Set(config.syncCategories)
+    : new Set(['mcps', 'agents', 'skills', 'plugins']);
 
   // Pull or clone
   section('Pull');
@@ -38,31 +42,39 @@ export async function pullCommand(options: ProviderFlagOptions = {}): Promise<vo
 
   // Check for mcp-config.json
   const mcpConfigPath = path.join(repoDir, 'mcp-config.json');
-  if (!fs.existsSync(mcpConfigPath)) {
-    heads_up('No config found in the pocket yet. Run `mcpocket push` on your source machine first!');
-    return;
+
+  let serverCount = 0;
+  let updatedClients: string[] = [];
+
+  if (activeCategories.has('mcps')) {
+    if (!fs.existsSync(mcpConfigPath)) {
+      heads_up('No MCP config found in the pocket yet. Run `mcpocket push` on your source machine first!');
+    } else {
+      const passphrase = await promptForPullPassphrase();
+
+      // Restore MCP servers
+      sparkle(WITTY.decrypting);
+      let remoteServers: ReturnType<typeof restoreFromPortableConfig>;
+      try {
+        const portableConfig: PortableMcpConfig = JSON.parse(fs.readFileSync(mcpConfigPath, 'utf8'));
+        remoteServers = restoreFromPortableConfig(portableConfig, passphrase);
+      } catch (err) {
+        oops(`Decryption failed: ${(err as Error).message}`);
+        process.exit(1);
+      }
+
+      serverCount = Object.keys(remoteServers).length;
+      updatedClients = applyServersToProviders(selection.selected, remoteServers);
+      sparkle(`Restored ${serverCount} MCP server(s)`);
+    }
+  } else {
+    sparkle('Skipping MCPs (not in sync scope)');
   }
-
-  const passphrase = await promptForPullPassphrase();
-
-  // Restore MCP servers
-  sparkle(WITTY.decrypting);
-  let remoteServers: ReturnType<typeof restoreFromPortableConfig>;
-  try {
-    const portableConfig: PortableMcpConfig = JSON.parse(fs.readFileSync(mcpConfigPath, 'utf8'));
-    remoteServers = restoreFromPortableConfig(portableConfig, passphrase);
-  } catch (err) {
-    oops(`Decryption failed: ${(err as Error).message}`);
-    process.exit(1);
-  }
-
-  const serverCount = Object.keys(remoteServers).length;
-  const updatedClients = applyServersToProviders(selection.selected, remoteServers);
-
-  sparkle(`Restored ${serverCount} MCP server(s)`);
 
   const restoredAssets = restoreClaudeHomeAssetsFromPocket(
     repoDir,
+    activeCategories,
+    !!config.syncCategories,
     selection.syncsClaudeHomeAssets,
     selection.isFiltered
   );
@@ -141,40 +153,65 @@ function applyServersToProviders(providers: ProviderDefinition[], remoteServers:
 
 function restoreClaudeHomeAssetsFromPocket(
   repoDir: string,
-  shouldRestore: boolean,
+  activeCategories: Set<SyncCategory>,
+  hasExplicitCategories: boolean,
+  syncsClaudeHomeAssets: boolean,
   showSkipMessage: boolean
 ): RestoredAssetSummary {
-  if (!shouldRestore) {
+  // When the user has explicitly configured sync categories, honor them directly.
+  // When no categories are configured (old config), fall back to syncsClaudeHomeAssets.
+  const shouldRestorePlugins = hasExplicitCategories
+    ? activeCategories.has('plugins')
+    : (activeCategories.has('plugins') && syncsClaudeHomeAssets);
+  const shouldRestoreAgents = hasExplicitCategories
+    ? activeCategories.has('agents')
+    : (activeCategories.has('agents') && syncsClaudeHomeAssets);
+  const shouldRestoreSkills = hasExplicitCategories
+    ? activeCategories.has('skills')
+    : (activeCategories.has('skills') && syncsClaudeHomeAssets);
+
+  let updatedManifests: string[] = [];
+  let agentResult = { synced: 0, removed: 0 };
+  let skillResult = { synced: 0, removed: 0 };
+
+  if (!shouldRestorePlugins && !shouldRestoreAgents && !shouldRestoreSkills) {
     if (showSkipMessage) {
-      sparkle('Skipping Claude home plugin manifests for this provider selection');
-      sparkle('Skipping Claude home agents for this provider selection');
-      sparkle('Skipping Claude home skills for this provider selection');
+      sparkle('Skipping Claude home plugin manifests for this sync scope');
+      sparkle('Skipping Claude home agents for this sync scope');
+      sparkle('Skipping Claude home skills for this sync scope');
     }
-
-    return {
-      updatedManifests: [],
-      agentResult: { synced: 0, removed: 0 },
-      skillResult: { synced: 0, removed: 0 },
-    };
+    return { updatedManifests, agentResult, skillResult };
   }
 
-  sparkle(WITTY.readingPlugins);
-  const manifests = readPluginManifestsFromRepo(repoDir);
-  const updatedManifests = applyPluginManifests(manifests);
-  sparkle(`Updated ${updatedManifests.length} manifest file(s)`);
-
-  sparkle(WITTY.readingAgents);
-  const agentResult = applyAgentsFromRepo(repoDir);
-  sparkle(`Restored ${agentResult.synced} agent file(s)`);
-  if (agentResult.removed > 0) {
-    sparkle(`Removed ${agentResult.removed} stale local agent file(s)`);
+  if (shouldRestorePlugins) {
+    sparkle(WITTY.readingPlugins);
+    const manifests = readPluginManifestsFromRepo(repoDir);
+    updatedManifests = applyPluginManifests(manifests);
+    sparkle(`Updated ${updatedManifests.length} manifest file(s)`);
+  } else if (showSkipMessage) {
+    sparkle('Skipping plugins (not in sync scope)');
   }
 
-  sparkle(WITTY.readingSkills);
-  const skillResult = applySkillsFromRepo(repoDir);
-  sparkle(`Restored ${skillResult.synced} skill file(s)`);
-  if (skillResult.removed > 0) {
-    sparkle(`Removed ${skillResult.removed} stale local skill file(s)`);
+  if (shouldRestoreAgents) {
+    sparkle(WITTY.readingAgents);
+    agentResult = applyAgentsFromRepo(repoDir);
+    sparkle(`Restored ${agentResult.synced} agent file(s)`);
+    if (agentResult.removed > 0) {
+      sparkle(`Removed ${agentResult.removed} stale local agent file(s)`);
+    }
+  } else if (showSkipMessage) {
+    sparkle('Skipping agents (not in sync scope)');
+  }
+
+  if (shouldRestoreSkills) {
+    sparkle(WITTY.readingSkills);
+    skillResult = applySkillsFromRepo(repoDir);
+    sparkle(`Restored ${skillResult.synced} skill file(s)`);
+    if (skillResult.removed > 0) {
+      sparkle(`Removed ${skillResult.removed} stale local skill file(s)`);
+    }
+  } else if (showSkipMessage) {
+    sparkle('Skipping skills (not in sync scope)');
   }
 
   return { updatedManifests, agentResult, skillResult };
