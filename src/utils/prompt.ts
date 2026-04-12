@@ -35,15 +35,17 @@ export async function askMultiSelect<T>(
     return options.map((o) => o.value);
   }
 
-  const selected: T[] = [];
+  const seen = new Set<number>();
+  const deduped: T[] = [];
   for (const part of answer.split(',')) {
     const idx = parseInt(part.trim(), 10) - 1;
-    if (!Number.isNaN(idx) && idx >= 0 && idx < options.length) {
-      selected.push(options[idx].value);
+    if (!Number.isNaN(idx) && idx >= 0 && idx < options.length && !seen.has(idx)) {
+      seen.add(idx);
+      deduped.push(options[idx].value);
     }
   }
 
-  return selected.length > 0 ? selected : options.map((o) => o.value);
+  return deduped.length > 0 ? deduped : options.map((o) => o.value);
 }
 
 /** Prompt for a hidden password (no echo) */

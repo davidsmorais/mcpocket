@@ -160,10 +160,17 @@ async function askSyncScope(): Promise<{ syncCategories: SyncCategory[]; syncPro
   section('Sync Scope');
   sparkle('Choose what mcpocket will sync for you.');
 
+  const CATEGORY_LABELS: Record<SyncCategory, string> = {
+    mcps: 'MCPs',
+    agents: 'Agents',
+    skills: 'Skills',
+    plugins: 'Plugins',
+  };
+
   const syncCategories = await askMultiSelect<SyncCategory>(
     'Which categories should be synced?',
     ALL_SYNC_CATEGORIES.map((cat) => ({
-      label: cat.charAt(0).toUpperCase() + cat.slice(1),
+      label: CATEGORY_LABELS[cat],
       value: cat,
     }))
   );
