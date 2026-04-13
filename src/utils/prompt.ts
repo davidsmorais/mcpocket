@@ -45,7 +45,12 @@ export async function askMultiSelect<T>(
     }
   }
 
-  return deduped.length > 0 ? deduped : options.map((o) => o.value);
+  if (deduped.length === 0) {
+    console.log('  No valid selections — selecting all.');
+    return options.map((o) => o.value);
+  }
+
+  return deduped;
 }
 
 /** Prompt for a hidden password (no echo) */
