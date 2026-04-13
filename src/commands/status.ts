@@ -8,7 +8,7 @@ import { readClaudeCodeMcpServers } from '../clients/claude-code.js';
 import { readOpenCodeMcpServers } from '../clients/opencode.js';
 import { mergeMcpSources } from '../sync/mcp.js';
 import type { PortableMcpConfig } from '../sync/mcp.js';
-import { sparkle, section, heads_up, WITTY } from '../utils/sparkle.js';
+import { sparkle, section, heads_up, WITTY, c } from '../utils/sparkle.js';
 
 export async function statusCommand(): Promise<void> {
   const config = readConfig();
@@ -56,15 +56,15 @@ export async function statusCommand(): Promise<void> {
   section('MCP Servers');
   if (inBoth.length > 0) {
     console.log('\n    \x1b[32mSynced:\x1b[0m');
-    for (const n of inBoth) console.log(`      ✓ ${n}`);
+    for (const n of inBoth) console.log(`      ${c.green('✓')} ${c.bold(n)}`);
   }
   if (onlyRemote.length > 0) {
     console.log('\n    \x1b[36mIn pocket, not here (run pull):\x1b[0m');
-    for (const n of onlyRemote) console.log(`      ↓ ${n}`);
+    for (const n of onlyRemote) console.log(`      ${c.cyan('↓')} ${c.bold(n)}`);
   }
   if (onlyLocal.length > 0) {
     console.log('\n    \x1b[33mLocal only (run push):\x1b[0m');
-    for (const n of onlyLocal) console.log(`      ↑ ${n}`);
+    for (const n of onlyLocal) console.log(`      ${c.yellow('↑')} ${c.bold(n)}`);
   }
   if (remoteNames.size === 0 && localNames.size === 0) {
     sparkle('No MCP servers found. Your pocket is empty!');
@@ -75,7 +75,7 @@ export async function statusCommand(): Promise<void> {
   const pluginFiles = ['plugins/installed_plugins.json', 'plugins/blocklist.json', 'plugins/known_marketplaces.json'];
   for (const f of pluginFiles) {
     const inRepo = fs.existsSync(path.join(repoDir, f));
-    console.log(`    ${inRepo ? '\x1b[32m✓\x1b[0m' : '\x1b[31m✗\x1b[0m'} ${f}`);
+    console.log(`    ${inRepo ? c.green('✓') : c.red('✗')} ${c.dim(f)}`);
   }
 
   // Agents
@@ -99,7 +99,7 @@ export async function statusCommand(): Promise<void> {
   }
 
   const remoteUrl = config.storageType === 'gist' ? config.gistUrl : config.repoHtmlUrl;
-  console.log(`\n  🔗 Remote: ${remoteUrl}\n`);
+  console.log(`\n  🔗 Remote: ${c.cyan(String(remoteUrl))}\n`);
 }
 
 function countFiles(dir: string, ext?: string): number {

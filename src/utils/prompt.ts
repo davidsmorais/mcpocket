@@ -1,4 +1,5 @@
 import * as readline from 'readline';
+import { c } from './sparkle.js';
 
 /** Prompt the user for text input */
 export function ask(question: string): Promise<string> {
@@ -9,6 +10,48 @@ export function ask(question: string): Promise<string> {
       resolve(answer.trim());
     });
   });
+}
+
+export interface MultiSelectOption<T> {
+  label: string;
+  value: T;
+}
+
+/**
+ * Show a numbered list of options and let the user pick a subset by typing
+ * comma-separated numbers (e.g. "1,3"). Pressing Enter with no input selects all.
+ * Returns the selected values.
+ */
+export async function askMultiSelect<T>(
+  question: string,
+  options: MultiSelectOption<T>[]
+): Promise<T[]> {
+  console.log(`\n  ${question}`);
+  options.forEach((opt, i) => {
+    console.log(`    ${c.cyan(`[${i + 1}]`)} ${opt.label}`);
+  });
+  const answer = await ask(`  Select ${c.dim('(comma-separated numbers, or Enter for all)')}: `);
+
+  if (!answer.trim()) {
+    return options.map((o) => o.value);
+  }
+
+  const seen = new Set<number>();
+  const deduped: T[] = [];
+  for (const part of answer.split(',')) {
+    const idx = parseInt(part.trim(), 10) - 1;
+    if (!Number.isNaN(idx) && idx >= 0 && idx < options.length && !seen.has(idx)) {
+      seen.add(idx);
+      deduped.push(options[idx].value);
+    }
+  }
+
+  if (deduped.length === 0) {
+    console.log('  No valid selections — selecting all.');
+    return options.map((o) => o.value);
+  }
+
+  return deduped;
 }
 
 /** Prompt for a hidden password (no echo) */

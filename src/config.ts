@@ -4,6 +4,8 @@ import * as os from 'os';
 import { getMcpocketConfigDir, getMcpocketConfigPath } from './utils/paths.js';
 
 export type StorageType = 'repo' | 'gist';
+export type SyncCategory = 'mcps' | 'agents' | 'skills' | 'plugins';
+export const ALL_SYNC_CATEGORIES: SyncCategory[] = ['mcps', 'agents', 'skills', 'plugins'];
 
 export interface McpocketConfig {
   githubToken: string;
@@ -15,6 +17,9 @@ export interface McpocketConfig {
   // Gist storage
   gistId?: string;
   gistUrl?: string;
+  // Sync scope (undefined = all)
+  syncCategories?: SyncCategory[];
+  syncProviders?: string[];
 }
 
 export function configExists(): boolean {

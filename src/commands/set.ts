@@ -2,7 +2,7 @@ import * as fs from 'node:fs';
 import { readConfig, writeConfig, getLocalRepoDir } from '../config.js';
 import { resolveGistInfo } from '../storage/gist.js';
 import { resolveRepoInfo, cloneRepo, ensureGitConfig } from '../storage/github.js';
-import { sparkle, celebrate, section, oops, WITTY } from '../utils/sparkle.js';
+import { sparkle, celebrate, section, oops, WITTY, c } from '../utils/sparkle.js';
 
 function detectGist(input: string): boolean {
   if (/gist\.github\.com/i.test(input)) return true;
@@ -22,7 +22,7 @@ export async function setCommand(pocketUrl: string): Promise<void> {
     let gistInfo: { id: string; htmlUrl: string };
     try {
       gistInfo = await resolveGistInfo(config.githubToken, trimmed);
-      sparkle(`Connected to gist pocket: ${gistInfo.htmlUrl}`);
+      sparkle(`Connected to gist pocket: ${c.cyan(gistInfo.htmlUrl)}`);
     } catch (err) {
       oops((err as Error).message);
       process.exit(1);
@@ -42,7 +42,7 @@ export async function setCommand(pocketUrl: string): Promise<void> {
     let repoInfo: Awaited<ReturnType<typeof resolveRepoInfo>>;
     try {
       repoInfo = await resolveRepoInfo(config.githubToken, trimmed);
-      sparkle(`Connected to repo pocket: ${repoInfo.htmlUrl}`);
+      sparkle(`Connected to repo pocket: ${c.cyan(repoInfo.htmlUrl)}`);
     } catch (err) {
       oops((err as Error).message);
       process.exit(1);
