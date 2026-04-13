@@ -16,7 +16,7 @@ import { applySkillsFromRepo, listRepoSkillNames } from '../sync/skills.js';
 import { formatProviderList, resolveProviderSelection } from './provider-options.js';
 import type { ProviderFlagOptions } from './provider-options.js';
 import { askSecret, askMultiSelect } from '../utils/prompt.js';
-import { sparkle, celebrate, section, stat, oops, heads_up, WITTY } from '../utils/sparkle.js';
+import { sparkle, celebrate, section, stat, oops, heads_up, WITTY, c } from '../utils/sparkle.js';
 
 interface RestoredAssetSummary {
   updatedManifests: string[];
@@ -109,9 +109,9 @@ export async function pullCommand(options: ProviderFlagOptions & { interactive?:
   stat('Skills', restoredAssets.skillResult.synced.toString());
 
   if (updatedClients.length > 0) {
-    console.log('\n  Updated clients:');
-    for (const c of updatedClients) {
-      sparkle(c);
+    console.log(`\n  ${c.bold('Updated clients:')}`);
+    for (const client of updatedClients) {
+      sparkle(c.cyan(client));
     }
     heads_up('Restart affected apps to apply MCP changes.');
   }

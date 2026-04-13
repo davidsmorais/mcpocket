@@ -4,7 +4,7 @@ import { writeConfig, configExists, getLocalRepoDir, ALL_SYNC_CATEGORIES } from 
 import type { StorageType, SyncCategory } from '../config.js';
 import { ALL_PROVIDERS } from '../clients/providers.js';
 import { ask, askSecret, askMultiSelect } from '../utils/prompt.js';
-import { sparkle, celebrate, section, oops, heads_up, WITTY } from '../utils/sparkle.js';
+import { sparkle, celebrate, section, oops, heads_up, WITTY, c } from '../utils/sparkle.js';
 
 export async function initCommand(): Promise<void> {
   section('Init');
@@ -20,8 +20,8 @@ export async function initCommand(): Promise<void> {
   // Get GitHub token
   console.log('');
   sparkle('First, let\'s link your GitHub account.');
-  console.log('  Required scopes: repo (full control of private repositories)\n');
-  console.log('  Create one at: https://github.com/settings/tokens/new\n');
+  console.log(`  Required scopes: ${c.bold('repo')} ${c.dim('(full control of private repositories)')}\n`);
+  console.log(`  Create one at: ${c.cyan('https://github.com/settings/tokens/new')}\n`);
 
   const token = await askSecret('  🔑 GitHub token: ');
   if (!token) {
@@ -43,8 +43,8 @@ export async function initCommand(): Promise<void> {
   // Choose storage type
   console.log('');
   sparkle('Where should mcpocket store your config?');
-  console.log('    [1] GitHub repo  (private repo, full git history)');
-  console.log('    [2] GitHub gist  (lighter, no git clone needed)\n');
+  console.log(`    ${c.cyan('[1]')} GitHub repo  ${c.dim('(private repo, full git history)')}`);
+  console.log(`    ${c.cyan('[2]')} GitHub gist  ${c.dim('(lighter, no git clone needed)')}\n`);
   const storageChoice = await ask('  Pick one [1/2]: ');
   const storageType: StorageType = storageChoice === '2' ? 'gist' : 'repo';
 
@@ -65,7 +65,7 @@ export async function initCommand(): Promise<void> {
       sparkle(WITTY.verifying);
       try {
         gistInfo = await resolveGistInfo(token, input);
-        sparkle(`Connected to pocket: ${gistInfo.htmlUrl}`);
+        sparkle(`Connected to pocket: ${c.cyan(gistInfo.htmlUrl)}`);
       } catch (err) {
         oops((err as Error).message);
         process.exit(1);
@@ -74,7 +74,7 @@ export async function initCommand(): Promise<void> {
       sparkle('Creating your private sync gist...');
       try {
         gistInfo = await createGist(token);
-        sparkle(`Pocket ready: ${gistInfo.htmlUrl}`);
+        sparkle(`Pocket ready: ${c.cyan(gistInfo.htmlUrl)}`);
       } catch (err) {
         oops((err as Error).message);
         process.exit(1);
@@ -108,7 +108,7 @@ export async function initCommand(): Promise<void> {
       sparkle(WITTY.verifying);
       try {
         repoInfo = await resolveRepoInfo(token, input);
-        sparkle(`Connected to pocket: ${repoInfo.htmlUrl}`);
+        sparkle(`Connected to pocket: ${c.cyan(repoInfo.htmlUrl)}`);
       } catch (err) {
         oops((err as Error).message);
         process.exit(1);
@@ -117,7 +117,7 @@ export async function initCommand(): Promise<void> {
       sparkle('Creating your private sync pocket (mcpocket-sync)...');
       try {
         repoInfo = await createRepo(token, owner);
-        sparkle(`Pocket ready: ${repoInfo.htmlUrl}`);
+        sparkle(`Pocket ready: ${c.cyan(repoInfo.htmlUrl)}`);
       } catch (err) {
         oops((err as Error).message);
         process.exit(1);
@@ -130,7 +130,7 @@ export async function initCommand(): Promise<void> {
     try {
       cloneRepo(repoInfo.cloneUrl, token, localDir);
       ensureGitConfig(localDir);
-      sparkle(`Stashed at ${localDir}`);
+      sparkle(`Stashed at ${c.dim(localDir)}`);
     } catch (err) {
       oops((err as Error).message);
       process.exit(1);
@@ -150,9 +150,9 @@ export async function initCommand(): Promise<void> {
   }
 
   celebrate(WITTY.initDone);
-  console.log('\n  Next steps:');
-  sparkle('mcpocket push   — tuck your setup into the cloud');
-  sparkle('mcpocket pull   — unpack your setup on a new machine');
+  console.log(`\n  ${c.bold('Next steps:')}`);
+  sparkle(`${c.cyan('mcpocket push')}   — tuck your setup into the cloud`);
+  sparkle(`${c.cyan('mcpocket pull')}   — unpack your setup on a new machine`);
   console.log('');
 }
 

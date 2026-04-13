@@ -1,4 +1,5 @@
 import * as readline from 'readline';
+import { c } from './sparkle.js';
 
 /** Prompt the user for text input */
 export function ask(question: string): Promise<string> {
@@ -27,9 +28,9 @@ export async function askMultiSelect<T>(
 ): Promise<T[]> {
   console.log(`\n  ${question}`);
   options.forEach((opt, i) => {
-    console.log(`    [${i + 1}] ${opt.label}`);
+    console.log(`    ${c.cyan(`[${i + 1}]`)} ${opt.label}`);
   });
-  const answer = await ask('  Select (comma-separated numbers, or Enter for all): ');
+  const answer = await ask(`  Select ${c.dim('(comma-separated numbers, or Enter for all)')}: `);
 
   if (!answer.trim()) {
     return options.map((o) => o.value);

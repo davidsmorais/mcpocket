@@ -3,6 +3,19 @@
  * Because syncing your AI setup should feel like magic, not homework.
  */
 
+/* ── ANSI helpers ────────────────────────────────────── */
+export const c = {
+  bold:    (s: string) => `\x1b[1m${s}\x1b[0m`,
+  dim:     (s: string) => `\x1b[2m${s}\x1b[0m`,
+  cyan:    (s: string) => `\x1b[36m${s}\x1b[0m`,
+  green:   (s: string) => `\x1b[32m${s}\x1b[0m`,
+  yellow:  (s: string) => `\x1b[33m${s}\x1b[0m`,
+  magenta: (s: string) => `\x1b[35m${s}\x1b[0m`,
+  blue:    (s: string) => `\x1b[34m${s}\x1b[0m`,
+  red:     (s: string) => `\x1b[31m${s}\x1b[0m`,
+  white:   (s: string) => `\x1b[37m${s}\x1b[0m`,
+} as const;
+
 const BANNER_LINES = [
   { color: 36, text: '                 .------------------------.' },
   { color: 36, text: String.raw`            .---/  .------------------.  \---.` },
@@ -69,7 +82,7 @@ export function spinner(message: string): { stop: (finalMsg?: string) => void } 
  */
 export function sparkle(message: string): void {
   const frame = FRAMES_SPARKLE[Math.floor(Math.random() * FRAMES_SPARKLE.length)];
-  console.log(`  ${frame} ${message}`);
+  console.log(`  ${c.magenta(frame)} ${message}`);
 }
 
 /**
@@ -92,7 +105,7 @@ export function section(title: string): void {
  * Print a friendly stat line (for summaries).
  */
 export function stat(label: string, value: string | number): void {
-  console.log(`    \x1b[33m${label}\x1b[0m  ${value}`);
+  console.log(`    \x1b[33m${label}\x1b[0m  ${c.bold(String(value))}`);
 }
 
 /**

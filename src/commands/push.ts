@@ -13,7 +13,7 @@ import { prunePocketDir } from '../sync/pocket.js';
 import { formatProviderList, resolveProviderSelection } from './provider-options.js';
 import type { ProviderFlagOptions } from './provider-options.js';
 import { askSecret, askMultiSelect } from '../utils/prompt.js';
-import { sparkle, celebrate, section, stat, oops, heads_up, WITTY } from '../utils/sparkle.js';
+import { sparkle, celebrate, section, stat, oops, heads_up, WITTY, c } from '../utils/sparkle.js';
 
 interface AssetSyncSummary {
   manifestCount: number;
@@ -94,7 +94,7 @@ export async function pushCommand(options: ProviderFlagOptions & { interactive?:
       const files = collectFilesFromDir(repoDir);
       await updateGist(config.githubToken, config.gistId!, files);
       celebrate(WITTY.pushDone);
-      heads_up(`Pocket URL: ${config.gistUrl}  ← save this to connect from another machine!`);
+      heads_up(`Pocket URL: ${c.cyan(config.gistUrl!)}  ← save this to connect from another machine!`);
     } catch (err) {
       oops(`Gist push failed: ${(err as Error).message}`);
       process.exit(1);
