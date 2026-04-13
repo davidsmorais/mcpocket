@@ -11,11 +11,11 @@ import {
 import type { PortableMcpConfig } from '../sync/mcp.js';
 import type { McpServersMap, ProviderDefinition } from '../clients/types.js';
 import { readPluginManifestsFromRepo, applyPluginManifests } from '../sync/plugins.js';
-import { applyAgentsFromRepo } from '../sync/agents.js';
-import { applySkillsFromRepo } from '../sync/skills.js';
+import { applyAgentsFromRepo, listRepoAgentNames } from '../sync/agents.js';
+import { applySkillsFromRepo, listRepoSkillNames } from '../sync/skills.js';
 import { formatProviderList, resolveProviderSelection } from './provider-options.js';
 import type { ProviderFlagOptions } from './provider-options.js';
-import { askSecret } from '../utils/prompt.js';
+import { askSecret, askMultiSelect } from '../utils/prompt.js';
 import { sparkle, celebrate, section, stat, oops, heads_up, WITTY } from '../utils/sparkle.js';
 
 interface RestoredAssetSummary {
@@ -24,7 +24,13 @@ interface RestoredAssetSummary {
   skillResult: { synced: number; removed: number };
 }
 
-export async function pullCommand(options: ProviderFlagOptions = {}): Promise<void> {
+interface ItemFilters {
+  mcpNames?: ReadonlySet<string>;
+  agentNames?: ReadonlySet<string>;
+  skillNames?: ReadonlySet<string>;
+}
+
+export async function pullCommand(options: ProviderFlagOptions & { interactive?: boolean } = {}): Promise<void> {
   const config = readConfig();
   const repoDir = getLocalRepoDir();
   const selection = resolveProviderSelection(options, config.syncProviders);
@@ -45,6 +51,7 @@ export async function pullCommand(options: ProviderFlagOptions = {}): Promise<vo
 
   let serverCount = 0;
   let updatedClients: string[] = [];
+  let filters: ItemFilters = {};
 
   if (activeCategories.has('mcps')) {
     if (!fs.existsSync(mcpConfigPath)) {
@@ -63,12 +70,23 @@ export async function pullCommand(options: ProviderFlagOptions = {}): Promise<vo
         process.exit(1);
       }
 
-      serverCount = Object.keys(remoteServers).length;
-      updatedClients = applyServersToProviders(selection.selected, remoteServers);
+      if (options.interactive) {
+        filters = await promptForPullItemSelection(activeCategories, remoteServers, repoDir);
+      }
+
+      const serversToApply = filters.mcpNames
+        ? filterMap(remoteServers, filters.mcpNames)
+        : remoteServers;
+
+      serverCount = Object.keys(serversToApply).length;
+      updatedClients = applyServersToProviders(selection.selected, serversToApply);
       sparkle(`Restored ${serverCount} MCP server(s)`);
     }
   } else {
     sparkle('Skipping MCPs (not in sync scope)');
+    if (options.interactive) {
+      filters = await promptForPullItemSelection(activeCategories, {}, repoDir);
+    }
   }
 
   const restoredAssets = restoreClaudeHomeAssetsFromPocket(
@@ -76,7 +94,8 @@ export async function pullCommand(options: ProviderFlagOptions = {}): Promise<vo
     activeCategories,
     !!config.syncCategories,
     selection.syncsClaudeHomeAssets,
-    selection.isFiltered
+    selection.isFiltered,
+    filters
   );
 
   // Summary
@@ -156,7 +175,8 @@ function restoreClaudeHomeAssetsFromPocket(
   activeCategories: Set<SyncCategory>,
   hasExplicitCategories: boolean,
   syncsClaudeHomeAssets: boolean,
-  showSkipMessage: boolean
+  showSkipMessage: boolean,
+  filters: ItemFilters = {}
 ): RestoredAssetSummary {
   // When the user has explicitly configured sync categories, honor them directly.
   // When no categories are configured (old config), fall back to syncsClaudeHomeAssets.
@@ -194,7 +214,7 @@ function restoreClaudeHomeAssetsFromPocket(
 
   if (shouldRestoreAgents) {
     sparkle(WITTY.readingAgents);
-    agentResult = applyAgentsFromRepo(repoDir);
+    agentResult = applyAgentsFromRepo(repoDir, filters.agentNames);
     sparkle(`Restored ${agentResult.synced} agent file(s)`);
     if (agentResult.removed > 0) {
       sparkle(`Removed ${agentResult.removed} stale local agent file(s)`);
@@ -205,7 +225,7 @@ function restoreClaudeHomeAssetsFromPocket(
 
   if (shouldRestoreSkills) {
     sparkle(WITTY.readingSkills);
-    skillResult = applySkillsFromRepo(repoDir);
+    skillResult = applySkillsFromRepo(repoDir, filters.skillNames);
     sparkle(`Restored ${skillResult.synced} skill file(s)`);
     if (skillResult.removed > 0) {
       sparkle(`Removed ${skillResult.removed} stale local skill file(s)`);
@@ -215,4 +235,63 @@ function restoreClaudeHomeAssetsFromPocket(
   }
 
   return { updatedManifests, agentResult, skillResult };
+}
+
+async function promptForPullItemSelection(
+  activeCategories: Set<SyncCategory>,
+  remoteServers: McpServersMap,
+  repoDir: string
+): Promise<ItemFilters> {
+  const filters: ItemFilters = {};
+
+  if (activeCategories.has('mcps')) {
+    const mcpNames = Object.keys(remoteServers);
+    if (mcpNames.length > 0) {
+      const selected = await askMultiSelect<string>(
+        'Which MCP servers should be pulled?',
+        mcpNames.map((name) => ({ label: name, value: name }))
+      );
+      if (selected.length < mcpNames.length) {
+        filters.mcpNames = new Set(selected);
+      }
+    }
+  }
+
+  if (activeCategories.has('agents')) {
+    const agentNames = listRepoAgentNames(repoDir);
+    if (agentNames.length > 0) {
+      const selected = await askMultiSelect<string>(
+        'Which agents should be pulled?',
+        agentNames.map((name) => ({ label: name, value: name }))
+      );
+      if (selected.length < agentNames.length) {
+        filters.agentNames = new Set(selected);
+      }
+    }
+  }
+
+  if (activeCategories.has('skills')) {
+    const skillNames = listRepoSkillNames(repoDir);
+    if (skillNames.length > 0) {
+      const selected = await askMultiSelect<string>(
+        'Which skills should be pulled?',
+        skillNames.map((name) => ({ label: name, value: name }))
+      );
+      if (selected.length < skillNames.length) {
+        filters.skillNames = new Set(selected);
+      }
+    }
+  }
+
+  return filters;
+}
+
+function filterMap<V>(map: Record<string, V>, allowedKeys: ReadonlySet<string>): Record<string, V> {
+  const result: Record<string, V> = {};
+  for (const [key, val] of Object.entries(map)) {
+    if (allowedKeys.has(key)) {
+      result[key] = val;
+    }
+  }
+  return result;
 }

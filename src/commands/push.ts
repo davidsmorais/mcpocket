@@ -5,13 +5,14 @@ import type { SyncCategory } from '../config.js';
 import { pullRepo, commitAndPush, ensureGitConfig } from '../storage/github.js';
 import { collectFilesFromDir, updateGist } from '../storage/gist.js';
 import { mergeMcpSources, buildPortableConfig } from '../sync/mcp.js';
+import type { McpServersMap } from '../clients/types.js';
 import { readPluginManifests, writePluginManifestsToRepo } from '../sync/plugins.js';
-import { writeAgentsToRepo } from '../sync/agents.js';
-import { writeSkillsToRepo } from '../sync/skills.js';
+import { writeAgentsToRepo, listLocalAgentNames } from '../sync/agents.js';
+import { writeSkillsToRepo, listLocalSkillNames } from '../sync/skills.js';
 import { prunePocketDir } from '../sync/pocket.js';
 import { formatProviderList, resolveProviderSelection } from './provider-options.js';
 import type { ProviderFlagOptions } from './provider-options.js';
-import { askSecret } from '../utils/prompt.js';
+import { askSecret, askMultiSelect } from '../utils/prompt.js';
 import { sparkle, celebrate, section, stat, oops, heads_up, WITTY } from '../utils/sparkle.js';
 
 interface AssetSyncSummary {
@@ -21,7 +22,13 @@ interface AssetSyncSummary {
   skillResult: { synced: number; removed: number };
 }
 
-export async function pushCommand(options: ProviderFlagOptions = {}): Promise<void> {
+interface ItemFilters {
+  mcpNames?: ReadonlySet<string>;
+  agentNames?: ReadonlySet<string>;
+  skillNames?: ReadonlySet<string>;
+}
+
+export async function pushCommand(options: ProviderFlagOptions & { interactive?: boolean } = {}): Promise<void> {
   const config = readConfig();
   const repoDir = getLocalRepoDir();
   const selection = resolveProviderSelection(options, config.syncProviders);
@@ -44,16 +51,30 @@ export async function pushCommand(options: ProviderFlagOptions = {}): Promise<vo
 
   const passphrase = await promptForPushPassphrase();
 
-  let serverCount = 0;
+  // Discover available items for interactive selection
+  let filters: ItemFilters = {};
+  let merged: McpServersMap = {};
+
   if (activeCategories.has('mcps')) {
     sparkle(WITTY.readingMCP);
-    const merged = mergeMcpSources(...selection.selected.map((provider) => provider.readMcpServers()));
-    serverCount = Object.keys(merged).length;
+    merged = mergeMcpSources(...selection.selected.map((provider) => provider.readMcpServers()));
+  }
+
+  if (options.interactive) {
+    filters = await promptForPushItemSelection(activeCategories, merged);
+  }
+
+  let serverCount = 0;
+  if (activeCategories.has('mcps')) {
+    const serversToSync = filters.mcpNames
+      ? filterMap(merged, filters.mcpNames)
+      : merged;
+    serverCount = Object.keys(serversToSync).length;
     sparkle(`Found ${serverCount} MCP server(s) across ${selection.selected.length} provider(s)`);
 
     // Write mcp-config.json
     sparkle(WITTY.encrypting);
-    const portableConfig = buildPortableConfig(merged, passphrase);
+    const portableConfig = buildPortableConfig(serversToSync, passphrase);
     fs.writeFileSync(
       path.join(repoDir, 'mcp-config.json'),
       JSON.stringify(portableConfig, null, 2),
@@ -63,7 +84,7 @@ export async function pushCommand(options: ProviderFlagOptions = {}): Promise<vo
     sparkle('Skipping MCPs (not in sync scope)');
   }
 
-  const assetSummary = syncClaudeHomeAssetsToPocket(repoDir, activeCategories, !!config.syncCategories, selection.syncsClaudeHomeAssets, selection.isFiltered);
+  const assetSummary = syncClaudeHomeAssetsToPocket(repoDir, activeCategories, !!config.syncCategories, selection.syncsClaudeHomeAssets, selection.isFiltered, filters);
 
   // Push to remote
   sparkle(WITTY.pushing);
@@ -139,7 +160,8 @@ function syncClaudeHomeAssetsToPocket(
   activeCategories: Set<SyncCategory>,
   hasExplicitCategories: boolean,
   syncsClaudeHomeAssets: boolean,
-  showSkipMessage: boolean
+  showSkipMessage: boolean,
+  filters: ItemFilters = {}
 ): AssetSyncSummary {
   // When the user has explicitly configured sync categories, honor them directly.
   // When no categories are configured (old config / no init scope selection),
@@ -183,7 +205,7 @@ function syncClaudeHomeAssetsToPocket(
 
   if (shouldSyncAgents) {
     sparkle(WITTY.readingAgents);
-    agentResult = writeAgentsToRepo(repoDir);
+    agentResult = writeAgentsToRepo(repoDir, filters.agentNames);
     sparkle(`Synced ${agentResult.synced} agent file(s)`);
     if (agentResult.removed > 0) {
       sparkle(`Removed ${agentResult.removed} stale agent file(s) from the pocket`);
@@ -194,7 +216,7 @@ function syncClaudeHomeAssetsToPocket(
 
   if (shouldSyncSkills) {
     sparkle(WITTY.readingSkills);
-    skillResult = writeSkillsToRepo(repoDir);
+    skillResult = writeSkillsToRepo(repoDir, filters.skillNames);
     sparkle(`Synced ${skillResult.synced} skill file(s)`);
     if (skillResult.removed > 0) {
       sparkle(`Removed ${skillResult.removed} stale skill file(s) from the pocket`);
@@ -204,4 +226,62 @@ function syncClaudeHomeAssetsToPocket(
   }
 
   return { manifestCount, pluginResult, agentResult, skillResult };
+}
+
+async function promptForPushItemSelection(
+  activeCategories: Set<SyncCategory>,
+  merged: McpServersMap
+): Promise<ItemFilters> {
+  const filters: ItemFilters = {};
+
+  if (activeCategories.has('mcps')) {
+    const mcpNames = Object.keys(merged);
+    if (mcpNames.length > 0) {
+      const selected = await askMultiSelect<string>(
+        'Which MCP servers should be pushed?',
+        mcpNames.map((name) => ({ label: name, value: name }))
+      );
+      if (selected.length < mcpNames.length) {
+        filters.mcpNames = new Set(selected);
+      }
+    }
+  }
+
+  if (activeCategories.has('agents')) {
+    const agentNames = listLocalAgentNames();
+    if (agentNames.length > 0) {
+      const selected = await askMultiSelect<string>(
+        'Which agents should be pushed?',
+        agentNames.map((name) => ({ label: name, value: name }))
+      );
+      if (selected.length < agentNames.length) {
+        filters.agentNames = new Set(selected);
+      }
+    }
+  }
+
+  if (activeCategories.has('skills')) {
+    const skillNames = listLocalSkillNames();
+    if (skillNames.length > 0) {
+      const selected = await askMultiSelect<string>(
+        'Which skills should be pushed?',
+        skillNames.map((name) => ({ label: name, value: name }))
+      );
+      if (selected.length < skillNames.length) {
+        filters.skillNames = new Set(selected);
+      }
+    }
+  }
+
+  return filters;
+}
+
+function filterMap<V>(map: Record<string, V>, allowedKeys: ReadonlySet<string>): Record<string, V> {
+  const result: Record<string, V> = {};
+  for (const [key, val] of Object.entries(map)) {
+    if (allowedKeys.has(key)) {
+      result[key] = val;
+    }
+  }
+  return result;
 }

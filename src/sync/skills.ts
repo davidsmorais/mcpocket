@@ -17,8 +17,37 @@ function shouldSkip(name: string): boolean {
   return false;
 }
 
+function isAllowedTopLevel(relPath: string, allowedNames?: ReadonlySet<string>): boolean {
+  if (!allowedNames) return true;
+  // The top-level directory or file name is the skill name
+  const topLevel = relPath.split(path.sep)[0];
+  return allowedNames.has(topLevel);
+}
+
+/** List skill names (top-level entries) available in ~/.claude/skills/ */
+export function listLocalSkillNames(): string[] {
+  const dir = path.join(getClaudeHomeDir(), SKILLS_DIR);
+  return listSkillNamesInDir(dir);
+}
+
+/** List skill names (top-level entries) available in repo/skills/ */
+export function listRepoSkillNames(repoDir: string): string[] {
+  const dir = path.join(repoDir, SKILLS_DIR);
+  return listSkillNamesInDir(dir);
+}
+
+function listSkillNamesInDir(dir: string): string[] {
+  if (!fs.existsSync(dir)) return [];
+  const names: string[] = [];
+  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+    if (shouldSkip(entry.name)) continue;
+    names.push(entry.name);
+  }
+  return names;
+}
+
 /** Copy skills/ from ~/.claude/skills/ to repo/skills/ (excluding node_modules) */
-export function writeSkillsToRepo(repoDir: string): SyncResult {
+export function writeSkillsToRepo(repoDir: string, allowedNames?: ReadonlySet<string>): SyncResult {
   const source = path.join(getClaudeHomeDir(), SKILLS_DIR);
   const dest = path.join(repoDir, SKILLS_DIR);
 
@@ -28,13 +57,13 @@ export function writeSkillsToRepo(repoDir: string): SyncResult {
   }
 
   return mirrorDirectory(source, dest, {
-    includeDirectory: (relPath) => !shouldSkip(path.basename(relPath)),
-    includeFile: (relPath) => !shouldSkip(path.basename(relPath)),
+    includeDirectory: (relPath) => !shouldSkip(path.basename(relPath)) && isAllowedTopLevel(relPath, allowedNames),
+    includeFile: (relPath) => !shouldSkip(path.basename(relPath)) && isAllowedTopLevel(relPath, allowedNames),
   });
 }
 
 /** Copy skills/ from repo/skills/ to ~/.claude/skills/ (overwrite, excluding node_modules) */
-export function applySkillsFromRepo(repoDir: string): SyncResult {
+export function applySkillsFromRepo(repoDir: string, allowedNames?: ReadonlySet<string>): SyncResult {
   const source = path.join(repoDir, SKILLS_DIR);
   const dest = path.join(getClaudeHomeDir(), SKILLS_DIR);
 
@@ -44,8 +73,8 @@ export function applySkillsFromRepo(repoDir: string): SyncResult {
   }
 
   return mirrorDirectory(source, dest, {
-    includeDirectory: (relPath) => !shouldSkip(path.basename(relPath)),
-    includeFile: (relPath) => !shouldSkip(path.basename(relPath)),
+    includeDirectory: (relPath) => !shouldSkip(path.basename(relPath)) && isAllowedTopLevel(relPath, allowedNames),
+    includeFile: (relPath) => !shouldSkip(path.basename(relPath)) && isAllowedTopLevel(relPath, allowedNames),
   });
 }
 

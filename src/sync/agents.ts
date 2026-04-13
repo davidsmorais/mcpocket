@@ -10,8 +10,52 @@ export interface SyncResult {
   removed: number;
 }
 
+function isIncludedDir(relPath: string): boolean {
+  const base = path.basename(relPath);
+  return !base.startsWith('.') && base !== 'node_modules';
+}
+
+function isIncludedFile(relPath: string, allowedNames?: ReadonlySet<string>): boolean {
+  if (!relPath.endsWith('.md')) return false;
+  if (!allowedNames) return true;
+  const name = path.basename(relPath, '.md');
+  return allowedNames.has(name);
+}
+
+/** List agent names available in ~/.claude/agents/ */
+export function listLocalAgentNames(): string[] {
+  const dir = path.join(getClaudeHomeDir(), AGENTS_DIR);
+  return listAgentNamesInDir(dir);
+}
+
+/** List agent names available in repo/agents/ */
+export function listRepoAgentNames(repoDir: string): string[] {
+  const dir = path.join(repoDir, AGENTS_DIR);
+  return listAgentNamesInDir(dir);
+}
+
+function listAgentNamesInDir(dir: string): string[] {
+  if (!fs.existsSync(dir)) return [];
+  const names: string[] = [];
+  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+    if (entry.name.startsWith('.') || entry.name === 'node_modules') continue;
+    if (entry.isFile() && entry.name.endsWith('.md')) {
+      names.push(path.basename(entry.name, '.md'));
+    } else if (entry.isDirectory()) {
+      // Include subdirectory agent files
+      const subDir = path.join(dir, entry.name);
+      for (const sub of fs.readdirSync(subDir, { withFileTypes: true })) {
+        if (sub.isFile() && sub.name.endsWith('.md')) {
+          names.push(path.basename(sub.name, '.md'));
+        }
+      }
+    }
+  }
+  return names;
+}
+
 /** Copy agents/ from ~/.claude/agents/ to repo/agents/ */
-export function writeAgentsToRepo(repoDir: string): SyncResult {
+export function writeAgentsToRepo(repoDir: string, allowedNames?: ReadonlySet<string>): SyncResult {
   const source = path.join(getClaudeHomeDir(), AGENTS_DIR);
   const dest = path.join(repoDir, AGENTS_DIR);
 
@@ -21,16 +65,13 @@ export function writeAgentsToRepo(repoDir: string): SyncResult {
   }
 
   return mirrorDirectory(source, dest, {
-    includeFile: (relPath) => relPath.endsWith('.md'),
-    includeDirectory: (relPath) => {
-      const base = path.basename(relPath);
-      return !base.startsWith('.') && base !== 'node_modules';
-    },
+    includeFile: (relPath) => isIncludedFile(relPath, allowedNames),
+    includeDirectory: (relPath) => isIncludedDir(relPath),
   });
 }
 
 /** Copy agents/ from repo/agents/ to ~/.claude/agents/ (overwrite) */
-export function applyAgentsFromRepo(repoDir: string): SyncResult {
+export function applyAgentsFromRepo(repoDir: string, allowedNames?: ReadonlySet<string>): SyncResult {
   const source = path.join(repoDir, AGENTS_DIR);
   const dest = path.join(getClaudeHomeDir(), AGENTS_DIR);
 
@@ -40,11 +81,8 @@ export function applyAgentsFromRepo(repoDir: string): SyncResult {
   }
 
   return mirrorDirectory(source, dest, {
-    includeFile: (relPath) => relPath.endsWith('.md'),
-    includeDirectory: (relPath) => {
-      const base = path.basename(relPath);
-      return !base.startsWith('.') && base !== 'node_modules';
-    },
+    includeFile: (relPath) => isIncludedFile(relPath, allowedNames),
+    includeDirectory: (relPath) => isIncludedDir(relPath),
   });
 }
 
