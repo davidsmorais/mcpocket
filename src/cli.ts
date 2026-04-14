@@ -4,6 +4,7 @@ import { initCommand } from './commands/init.js';
 import { pushCommand } from './commands/push.js';
 import { pullCommand } from './commands/pull.js';
 import { dedupeCommand } from './commands/dedupe.js';
+import { cleanupCommand } from './commands/cleanup.js';
 import { statusCommand } from './commands/status.js';
 import { setCommand } from './commands/set.js';
 import { PROVIDER_OPTION_FLAGS } from './clients/providers.js';
@@ -56,6 +57,14 @@ program
   .alias('dedupe')
   .description('Clean stale synced files from your pocket and local folders')
   .action(() => dedupeCommand().catch(die));
+
+program
+  .command('cleanup')
+  .description('Remove unwanted files from your pocket (interactive or pattern-based)')
+  .option('-l, --local', 'Operate on local pocket only — no pull/push; uses patterns from mcpocket.json')
+  .option('--dry-run', 'Preview which files would be deleted without making any changes')
+  .option('-y, --yes', 'Skip the confirmation prompt and delete immediately')
+  .action((options) => cleanupCommand(options).catch(die));
 
 program
   .command('set <pocketUrl>')

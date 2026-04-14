@@ -61,10 +61,16 @@ mcpocket push
 # 3. Pull on a new machine
 mcpocket pull
 
-# 4. Clean up stale synced files if needed
+# 4. Clean up pocket files interactively
+mcpocket cleanup
+
+# 5. Clean up using patterns from your config (local only, no remote sync)
+mcpocket cleanup --local
+
+# 6. Clean up stale synced files if needed
 mcpocket de-dupe
 
-# 5. Check sync status
+# 7. Check sync status
 mcpocket status
 ```
 
@@ -166,6 +172,50 @@ mcpocket de-dupe
 
 Use this if you already have duplicate or renamed agent/skill/plugin files from earlier syncs. In normal use, `push` and `pull` now keep these folders de-duplicated automatically.
 
+### `mcpocket cleanup`
+
+Pulls your pocket from the remote, lets you interactively choose which files to keep, deletes the rest, then pushes the updated pocket back.
+
+```bash
+mcpocket cleanup
+```
+
+You will be presented with a numbered list of every file in your pocket and can enter comma-separated indices to select which ones to keep (pressing Enter keeps everything). After confirming, the unselected files are deleted and the pocket is pushed back to the remote.
+
+**Options:**
+
+| Flag | Description |
+|---|---|
+| `-l, --local` | Operate on the local pocket only — no pull/push; use patterns from `mcpocket.json` |
+| `--dry-run` | Preview which files would be deleted without making any changes |
+| `-y, --yes` | Skip the confirmation prompt |
+
+#### Local-only cleanup (`--local`)
+
+When running with `--local`, mcpocket reads `cleanupInclude` / `cleanupExclude` pattern arrays from `~/.mcpocket/config.json`:
+
+```jsonc
+{
+  // ... other config ...
+  "cleanupInclude": ["agents/", "skills/"],   // whitelist: only keep these
+  "cleanupExclude": ["skills/nested/**"]       // blacklist: also remove these
+}
+```
+
+Pattern semantics:
+- `cleanupInclude`: only files matching **at least one** include pattern are kept. Omit or leave empty to include everything.
+- `cleanupExclude`: files matching any exclude pattern are removed (applied after include filtering).
+- `dir/` is shorthand for `dir/**` (matches all files inside that directory).
+- `*` matches any characters within a single path segment; `**` matches across segments.
+
+If no patterns are configured, `--local` falls back to the same interactive selection UI as the remote mode.
+
+```bash
+mcpocket cleanup --local
+mcpocket cleanup --local --dry-run   # preview without deleting
+mcpocket cleanup --local --yes       # skip confirmation
+```
+
 ### `mcpocket status`
 
 Shows a diff of what's synced, what's local-only, and what's remote-only:
@@ -261,7 +311,10 @@ mcpocket stores its own config at `~/.mcpocket/config.json`:
   "repoHtmlUrl": "https://github.com/user/mcpocket-sync",
   // Gist mode:
   "gistId": "abc123...",
-  "gistUrl": "https://gist.github.com/abc123..."
+  "gistUrl": "https://gist.github.com/abc123...",
+  // Cleanup patterns (used by `mcpocket cleanup --local`):
+  "cleanupInclude": ["agents/", "skills/"],  // whitelist: only keep these
+  "cleanupExclude": ["skills/nested/**"]      // blacklist: also remove these
 }
 ```
 
@@ -289,6 +342,7 @@ src/
     opencode.ts        # OpenCode config reader/writer
     types.ts           # Shared MCP server type definitions
   commands/
+    cleanup.ts         # Interactive/pattern-based pocket cleanup
     init.ts            # Interactive setup wizard
     push.ts            # Push local config to remote
     pull.ts            # Pull remote config to local

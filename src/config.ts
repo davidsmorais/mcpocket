@@ -20,6 +20,9 @@ export interface McpocketConfig {
   // Sync scope (undefined = all)
   syncCategories?: SyncCategory[];
   syncProviders?: string[];
+  // Cleanup filters (used by `mcpocket cleanup --local`)
+  cleanupInclude?: string[];
+  cleanupExclude?: string[];
 }
 
 export function configExists(): boolean {
