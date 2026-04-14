@@ -110,6 +110,11 @@ export function cloneRepo(cloneUrl: string, token: string, localDir: string): vo
     return; // already cloned
   }
 
+  // If the directory exists but has no .git, remove it so git clone can proceed
+  if (fs.existsSync(localDir)) {
+    fs.rmSync(localDir, { recursive: true, force: true });
+  }
+
   // Inject token into clone URL: https://token@github.com/...
   const authUrl = cloneUrl.replace('https://', `https://${token}@`);
   const parentDir = path.dirname(localDir);
