@@ -27,7 +27,8 @@ program
 program
   .command('push')
   .description('Tuck your AI setup into the cloud pocket')
-  .option('-i, --interactive', 'Pick specific items to sync')
+  .option('-i, --interactive', 'Pick specific items to sync (keyboard UI)')
+  .option('--ui', 'Open a browser UI on port 3000 to select items to sync')
 
 for (const provider of PROVIDER_OPTION_FLAGS) {
   program.commands.find((command) => command.name() === 'push')?.option(provider.flag, provider.description);
@@ -41,7 +42,8 @@ program
 program
   .command('pull')
   .description('Unpack your AI setup from the cloud pocket')
-  .option('-i, --interactive', 'Pick specific items to sync')
+  .option('-i, --interactive', 'Pick specific items to sync (keyboard UI)')
+  .option('--ui', 'Open a browser UI on port 3000 to select items to sync')
 
 for (const provider of PROVIDER_OPTION_FLAGS) {
   program.commands.find((command) => command.name() === 'pull')?.option(provider.flag, provider.description);

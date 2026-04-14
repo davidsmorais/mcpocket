@@ -12,7 +12,9 @@ import { writeSkillsToRepo, listLocalSkillNames } from '../sync/skills.js';
 import { prunePocketDir } from '../sync/pocket.js';
 import { formatProviderList, resolveProviderSelection } from './provider-options.js';
 import type { ProviderFlagOptions } from './provider-options.js';
-import { askSecret, askMultiSelect } from '../utils/prompt.js';
+import { promptForItemSelection, type ItemFilters } from './item-select.js';
+import { openSelectionUi } from './ui-server.js';
+import { askSecret } from '../utils/prompt.js';
 import { sparkle, celebrate, section, stat, oops, heads_up, WITTY, c } from '../utils/sparkle.js';
 
 interface AssetSyncSummary {
@@ -22,13 +24,9 @@ interface AssetSyncSummary {
   skillResult: { synced: number; removed: number };
 }
 
-interface ItemFilters {
-  mcpNames?: ReadonlySet<string>;
-  agentNames?: ReadonlySet<string>;
-  skillNames?: ReadonlySet<string>;
-}
-
-export async function pushCommand(options: ProviderFlagOptions & { interactive?: boolean } = {}): Promise<void> {
+export async function pushCommand(
+  options: ProviderFlagOptions & { interactive?: boolean; ui?: boolean } = {},
+): Promise<void> {
   const config = readConfig();
   const repoDir = getLocalRepoDir();
   const selection = resolveProviderSelection(options, config.syncProviders);
@@ -49,44 +47,77 @@ export async function pushCommand(options: ProviderFlagOptions & { interactive?:
     sparkle(`Removed ${prunedEntries} stale pocket entr${prunedEntries === 1 ? 'y' : 'ies'}`);
   }
 
-  const passphrase = await promptForPushPassphrase();
+  // ── Discover available items (no passphrase yet) ──────────────────────────
 
-  // Discover available items for interactive selection
-  let filters: ItemFilters = {};
-  let merged: McpServersMap = {};
-
+  let allMcps: McpServersMap = {};
   if (activeCategories.has('mcps')) {
     sparkle(WITTY.readingMCP);
-    merged = mergeMcpSources(...selection.selected.map((provider) => provider.readMcpServers()));
+    allMcps = mergeMcpSources(...selection.selected.map((p) => p.readMcpServers()));
   }
 
-  if (options.interactive) {
-    filters = await promptForPushItemSelection(activeCategories, merged);
+  const allAgentNames = activeCategories.has('agents') && selection.syncsClaudeHomeAssets
+    ? listLocalAgentNames()
+    : [];
+  const allSkillNames = activeCategories.has('skills') && selection.syncsClaudeHomeAssets
+    ? listLocalSkillNames()
+    : [];
+  const allMcpNames = Object.keys(allMcps);
+
+  // ── Item selection ────────────────────────────────────────────────────────
+
+  let filters: ItemFilters = {};
+
+  if (options.ui) {
+    filters = await openSelectionUi(
+      { agents: allAgentNames, skills: allSkillNames, mcps: allMcpNames },
+      'push',
+    );
+  } else if (options.interactive) {
+    filters = await promptForItemSelection(
+      'What would you like to push?',
+      allAgentNames,
+      allSkillNames,
+      allMcpNames,
+    );
   }
+
+  // ── MCPs ──────────────────────────────────────────────────────────────────
 
   let serverCount = 0;
   if (activeCategories.has('mcps')) {
-    const serversToSync = filters.mcpNames
-      ? filterMap(merged, filters.mcpNames)
-      : merged;
+    const serversToSync = filters.mcpNames ? filterMap(allMcps, filters.mcpNames) : allMcps;
     serverCount = Object.keys(serversToSync).length;
-    sparkle(`Found ${serverCount} MCP server(s) across ${selection.selected.length} provider(s)`);
 
-    // Write mcp-config.json
-    sparkle(WITTY.encrypting);
-    const portableConfig = buildPortableConfig(serversToSync, passphrase);
-    fs.writeFileSync(
-      path.join(repoDir, 'mcp-config.json'),
-      JSON.stringify(portableConfig, null, 2),
-      'utf8'
-    );
+    if (serverCount > 0) {
+      sparkle(`Pushing ${serverCount} MCP server(s) across ${selection.selected.length} provider(s)`);
+      const passphrase = await promptForPushPassphrase();
+      sparkle(WITTY.encrypting);
+      const portableConfig = buildPortableConfig(serversToSync, passphrase);
+      fs.writeFileSync(
+        path.join(repoDir, 'mcp-config.json'),
+        JSON.stringify(portableConfig, null, 2),
+        'utf8',
+      );
+    } else {
+      sparkle('No MCP servers to push — skipping');
+    }
   } else {
     sparkle('Skipping MCPs (not in sync scope)');
   }
 
-  const assetSummary = syncClaudeHomeAssetsToPocket(repoDir, activeCategories, !!config.syncCategories, selection.syncsClaudeHomeAssets, selection.isFiltered, filters);
+  // ── Agents, skills, plugins ───────────────────────────────────────────────
 
-  // Push to remote
+  const assetSummary = syncClaudeHomeAssetsToPocket(
+    repoDir,
+    activeCategories,
+    !!config.syncCategories,
+    selection.syncsClaudeHomeAssets,
+    selection.isFiltered,
+    filters,
+  );
+
+  // ── Push to remote ────────────────────────────────────────────────────────
+
   sparkle(WITTY.pushing);
 
   if (config.storageType === 'gist') {
@@ -120,11 +151,13 @@ export async function pushCommand(options: ProviderFlagOptions & { interactive?:
   console.log('');
 }
 
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
 function preparePocketDirectory(
   storageType: 'repo' | 'gist',
   repoDir: string,
   githubToken: string,
-  repoCloneUrl?: string
+  repoCloneUrl?: string,
 ): void {
   if (storageType === 'gist') {
     fs.mkdirSync(repoDir, { recursive: true });
@@ -148,7 +181,7 @@ async function promptForPushPassphrase(): Promise<string> {
 
   const confirm = await askSecret('  🔒 Confirm passphrase: ');
   if (passphrase !== confirm) {
-    oops('Passphrases don\'t match. Give it another whirl!');
+    oops("Passphrases don't match. Give it another whirl!");
     process.exit(1);
   }
 
@@ -161,25 +194,22 @@ function syncClaudeHomeAssetsToPocket(
   hasExplicitCategories: boolean,
   syncsClaudeHomeAssets: boolean,
   showSkipMessage: boolean,
-  filters: ItemFilters = {}
+  filters: ItemFilters = {},
 ): AssetSyncSummary {
-  // When the user has explicitly configured sync categories, honor them directly.
-  // When no categories are configured (old config / no init scope selection),
-  // fall back to the provider-driven syncsClaudeHomeAssets flag.
   const shouldSyncPlugins = hasExplicitCategories
     ? activeCategories.has('plugins')
-    : (activeCategories.has('plugins') && syncsClaudeHomeAssets);
+    : activeCategories.has('plugins') && syncsClaudeHomeAssets;
   const shouldSyncAgents = hasExplicitCategories
     ? activeCategories.has('agents')
-    : (activeCategories.has('agents') && syncsClaudeHomeAssets);
+    : activeCategories.has('agents') && syncsClaudeHomeAssets;
   const shouldSyncSkills = hasExplicitCategories
     ? activeCategories.has('skills')
-    : (activeCategories.has('skills') && syncsClaudeHomeAssets);
+    : activeCategories.has('skills') && syncsClaudeHomeAssets;
 
   let manifestCount = 0;
   let pluginResult = { synced: 0, removed: 0 };
-  let agentResult = { synced: 0, removed: 0 };
-  let skillResult = { synced: 0, removed: 0 };
+  let agentResult  = { synced: 0, removed: 0 };
+  let skillResult  = { synced: 0, removed: 0 };
 
   if (!shouldSyncPlugins && !shouldSyncAgents && !shouldSyncSkills) {
     if (showSkipMessage) {
@@ -228,60 +258,10 @@ function syncClaudeHomeAssetsToPocket(
   return { manifestCount, pluginResult, agentResult, skillResult };
 }
 
-async function promptForPushItemSelection(
-  activeCategories: Set<SyncCategory>,
-  merged: McpServersMap
-): Promise<ItemFilters> {
-  const filters: ItemFilters = {};
-
-  if (activeCategories.has('mcps')) {
-    const mcpNames = Object.keys(merged);
-    if (mcpNames.length > 0) {
-      const selected = await askMultiSelect<string>(
-        'Which MCP servers should be pushed?',
-        mcpNames.map((name) => ({ label: name, value: name }))
-      );
-      if (selected.length < mcpNames.length) {
-        filters.mcpNames = new Set(selected);
-      }
-    }
-  }
-
-  if (activeCategories.has('agents')) {
-    const agentNames = listLocalAgentNames();
-    if (agentNames.length > 0) {
-      const selected = await askMultiSelect<string>(
-        'Which agents should be pushed?',
-        agentNames.map((name) => ({ label: name, value: name }))
-      );
-      if (selected.length < agentNames.length) {
-        filters.agentNames = new Set(selected);
-      }
-    }
-  }
-
-  if (activeCategories.has('skills')) {
-    const skillNames = listLocalSkillNames();
-    if (skillNames.length > 0) {
-      const selected = await askMultiSelect<string>(
-        'Which skills should be pushed?',
-        skillNames.map((name) => ({ label: name, value: name }))
-      );
-      if (selected.length < skillNames.length) {
-        filters.skillNames = new Set(selected);
-      }
-    }
-  }
-
-  return filters;
-}
-
 function filterMap<V>(map: Record<string, V>, allowedKeys: ReadonlySet<string>): Record<string, V> {
   const result: Record<string, V> = {};
   for (const [key, val] of Object.entries(map)) {
-    if (allowedKeys.has(key)) {
-      result[key] = val;
-    }
+    if (allowedKeys.has(key)) result[key] = val;
   }
   return result;
 }

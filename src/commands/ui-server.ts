@@ -1,0 +1,283 @@
+import * as http from 'node:http';
+import * as cp from 'node:child_process';
+import type { ItemFilters } from './item-select.js';
+import { sparkle, oops, c } from '../utils/sparkle.js';
+
+const PORT = 3000;
+
+export interface UiItems {
+  agents: string[];
+  skills: string[];
+  mcps:   string[];
+}
+
+/**
+ * Start a local HTTP server on port 3000, open the browser, and wait for
+ * the user to submit their selection.  Resolves with ItemFilters once the
+ * user clicks the sync button.
+ */
+export async function openSelectionUi(
+  items: UiItems,
+  action: 'push' | 'pull',
+): Promise<ItemFilters> {
+  return new Promise((resolve, reject) => {
+    const server = http.createServer((req, res) => {
+      if (req.method === 'GET' && req.url === '/') {
+        res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+        res.end(buildHtml(items, action));
+        return;
+      }
+
+      if (req.method === 'GET' && req.url === '/api/items') {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ ...items, action }));
+        return;
+      }
+
+      if (req.method === 'POST' && req.url === '/api/sync') {
+        let body = '';
+        req.on('data', (chunk: Buffer) => { body += chunk.toString(); });
+        req.on('end', () => {
+          try {
+            const sel: { agents: string[]; skills: string[]; mcps: string[] } = JSON.parse(body);
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ ok: true }));
+            server.close();
+            resolve(buildFilters(sel, items));
+          } catch {
+            res.writeHead(400, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: 'Invalid JSON' }));
+          }
+        });
+        return;
+      }
+
+      res.writeHead(404);
+      res.end();
+    });
+
+    server.on('error', (err: NodeJS.ErrnoException) => {
+      if (err.code === 'EADDRINUSE') {
+        oops(`Port ${PORT} is already in use. Stop any other process using it and try again.`);
+      } else {
+        oops(err.message);
+      }
+      reject(err);
+    });
+
+    server.listen(PORT, '127.0.0.1', () => {
+      const url = `http://localhost:${PORT}`;
+      tryOpenBrowser(url);
+      sparkle(`UI running at ${c.cyan(url)}`);
+      sparkle('Select your items in the browser, then click the sync button…');
+    });
+  });
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+function buildFilters(
+  sel: { agents: string[]; skills: string[]; mcps: string[] },
+  available: UiItems,
+): ItemFilters {
+  const filters: ItemFilters = {};
+  if (sel.agents.length < available.agents.length) filters.agentNames = new Set(sel.agents);
+  if (sel.skills.length < available.skills.length) filters.skillNames = new Set(sel.skills);
+  if (sel.mcps.length   < available.mcps.length)   filters.mcpNames   = new Set(sel.mcps);
+  return filters;
+}
+
+function tryOpenBrowser(url: string): void {
+  try {
+    const cmd =
+      process.platform === 'win32'  ? `start "" "${url}"` :
+      process.platform === 'darwin' ? `open "${url}"` :
+                                      `xdg-open "${url}"`;
+    cp.exec(cmd);
+  } catch {
+    // Non-fatal — user can open manually
+  }
+}
+
+function esc(str: string): string {
+  return str
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+// ── HTML ──────────────────────────────────────────────────────────────────────
+
+function renderGroup(
+  kind: string,
+  title: string,
+  colorVar: string,
+  names: string[],
+): string {
+  const items = names
+    .map(
+      (n) => `
+        <label class="item">
+          <input type="checkbox" data-kind="${kind}" value="${esc(n)}" checked>
+          <span class="name">${esc(n)}</span>
+        </label>`,
+    )
+    .join('');
+
+  const empty = `<div class="empty">No ${title.toLowerCase()} found</div>`;
+
+  return `
+  <div class="group" id="grp-${kind}">
+    <div class="group-head">
+      <span class="badge" style="--c:${colorVar}">${title}</span>
+      <span class="grp-count" id="cnt-${kind}"><b>${names.length}</b>/${names.length}</span>
+      ${names.length > 0 ? `<button class="toggle-btn" onclick="toggleGroup('${kind}')">toggle all</button>` : ''}
+    </div>
+    <div class="group-body">${names.length > 0 ? items : empty}</div>
+  </div>`;
+}
+
+function buildHtml(items: UiItems, action: 'push' | 'pull'): string {
+  const actionLabel = action === 'push' ? 'Push to Pocket' : 'Pull from Pocket';
+  const actionVerb  = action === 'push' ? 'push'           : 'pull';
+  const itemsJson   = JSON.stringify(items);
+
+  const groups = [
+    renderGroup('agents', 'Agents',      'var(--blue)',    items.agents),
+    renderGroup('skills', 'Skills',      'var(--purple)',  items.skills),
+    renderGroup('mcps',   'MCP Servers', 'var(--green)',   items.mcps),
+  ].join('');
+
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>mcpocket — ${actionVerb}</title>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#0d1117;--surface:#161b22;--border:#30363d;
+  --text:#e6edf3;--muted:#8b949e;
+  --blue:#58a6ff;--green:#3fb950;--purple:#bc8cff;--yellow:#d29922;
+  --font:'SF Mono','Fira Code','Cascadia Code',ui-monospace,monospace;
+}
+body{font-family:var(--font);background:var(--bg);color:var(--text);min-height:100vh;display:flex;flex-direction:column}
+
+/* header */
+header{padding:20px 32px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between}
+.logo{font-size:18px;font-weight:700;letter-spacing:-.5px}
+.logo em{color:var(--blue);font-style:normal}
+.logo span{color:var(--purple)}
+.subtitle{font-size:12px;color:var(--muted);margin-top:3px}
+
+/* main */
+main{flex:1;padding:24px 32px;max-width:760px;width:100%;margin:0 auto;display:flex;flex-direction:column;gap:16px}
+
+/* groups */
+.group{background:var(--surface);border:1px solid var(--border);border-radius:8px;overflow:hidden}
+.group-head{display:flex;align-items:center;gap:10px;padding:10px 14px;border-bottom:1px solid var(--border);background:rgba(255,255,255,.02)}
+.badge{font-size:11px;font-weight:600;padding:2px 8px;border-radius:4px;background:color-mix(in srgb,var(--c) 18%,transparent);color:var(--c)}
+.grp-count{font-size:12px;color:var(--muted);margin-left:auto}
+.grp-count b{color:var(--text)}
+.toggle-btn{font-family:var(--font);font-size:11px;color:var(--blue);background:none;border:none;cursor:pointer;padding:3px 8px;border-radius:4px}
+.toggle-btn:hover{background:rgba(88,166,255,.12)}
+.group-body{padding:6px 0}
+
+/* items */
+.item{display:flex;align-items:center;gap:11px;padding:7px 14px;cursor:pointer;transition:background .1s}
+.item:hover{background:rgba(255,255,255,.04)}
+.item input[type=checkbox]{width:14px;height:14px;accent-color:var(--blue);cursor:pointer;flex-shrink:0}
+.name{font-size:13px}
+.empty{padding:14px;font-size:12px;color:var(--muted);text-align:center;font-style:italic}
+
+/* footer */
+footer{position:sticky;bottom:0;background:var(--bg);border-top:1px solid var(--border);padding:14px 32px;display:flex;align-items:center;justify-content:space-between;gap:16px}
+.summary{font-size:13px;color:var(--muted)}
+.summary b{color:var(--text)}
+.sync-btn{padding:9px 22px;background:var(--blue);color:#0d1117;border:none;border-radius:6px;font-family:var(--font);font-size:13px;font-weight:700;cursor:pointer;transition:opacity .15s}
+.sync-btn:hover{opacity:.88}
+.sync-btn:disabled{opacity:.35;cursor:default}
+
+/* done screen */
+#done{display:none;flex:1;align-items:center;justify-content:center;flex-direction:column;gap:10px;padding:48px}
+#done.show{display:flex}
+.done-icon{font-size:52px}
+.done-msg{font-size:20px;color:var(--green);font-weight:600}
+.done-sub{font-size:13px;color:var(--muted)}
+</style>
+</head>
+<body>
+
+<header>
+  <div>
+    <div class="logo"><em>mcp</em><span>pocket</span></div>
+    <div class="subtitle">Select items to ${actionVerb} → pocket</div>
+  </div>
+</header>
+
+<main id="main">${groups}</main>
+
+<div id="done">
+  <div class="done-icon">✓</div>
+  <div class="done-msg">Selection submitted!</div>
+  <div class="done-sub">Check your terminal to complete the ${actionVerb}.</div>
+</div>
+
+<footer id="foot">
+  <div class="summary" id="summary"></div>
+  <button class="sync-btn" id="sync-btn" onclick="submitSel()">${actionLabel}</button>
+</footer>
+
+<script>
+const ITEMS=${itemsJson};
+
+function countFor(kind){
+  return document.querySelectorAll('[data-kind='+kind+']:checked').length;
+}
+function updateCounts(){
+  let total=0,sel=0;
+  ['agents','skills','mcps'].forEach(k=>{
+    const all=ITEMS[k].length, s=countFor(k);
+    total+=all; sel+=s;
+    const el=document.getElementById('cnt-'+k);
+    if(el) el.innerHTML='<b>'+s+'</b>/'+all;
+  });
+  document.getElementById('summary').innerHTML=
+    '<b>'+sel+'</b> of <b>'+total+'</b> items selected';
+}
+
+function toggleGroup(kind){
+  const boxes=[...document.querySelectorAll('[data-kind='+kind+']')];
+  const allOn=boxes.every(b=>b.checked);
+  boxes.forEach(b=>b.checked=!allOn);
+  updateCounts();
+}
+
+document.addEventListener('change',updateCounts);
+
+async function submitSel(){
+  const sel={agents:[],skills:[],mcps:[]};
+  ['agents','skills','mcps'].forEach(k=>{
+    document.querySelectorAll('[data-kind='+k+']:checked')
+      .forEach(b=>sel[k].push(b.value));
+  });
+  const btn=document.getElementById('sync-btn');
+  btn.disabled=true; btn.textContent='Syncing…';
+  try{
+    await fetch('/api/sync',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(sel)});
+    document.getElementById('main').style.display='none';
+    document.getElementById('foot').style.display='none';
+    document.getElementById('done').classList.add('show');
+  }catch{
+    btn.disabled=false; btn.textContent='${actionLabel}';
+    alert('Could not reach the mcpocket server — is the terminal still running?');
+  }
+}
+
+updateCounts();
+</script>
+</body>
+</html>`;
+}

@@ -4,6 +4,7 @@ import { readConfig, getLocalRepoDir } from '../config.js';
 import type { McpocketConfig } from '../config.js';
 import { pullRepo, commitAndPush, ensureGitConfig } from '../storage/github.js';
 import { fetchGist, writeGistFilesToDir, collectFilesFromDir, updateGist } from '../storage/gist.js';
+import { listPocketMcpServerNames } from '../sync/mcp.js';
 import { ask, askMultiSelect } from '../utils/prompt.js';
 import { sparkle, celebrate, section, stat, oops, heads_up, c } from '../utils/sparkle.js';
 
@@ -256,22 +257,6 @@ export function buildPocketItems(repoDir: string, allFiles: string[]): PocketIte
   });
 
   return items;
-}
-
-/**
- * Read MCP server names from mcp-config.json without decrypting.
- * Server names (keys) are stored in plaintext; only their env/headers values are encrypted.
- */
-export function listPocketMcpServerNames(repoDir: string): string[] {
-  const configPath = path.join(repoDir, 'mcp-config.json');
-  if (!fs.existsSync(configPath)) return [];
-  try {
-    const raw = fs.readFileSync(configPath, 'utf8');
-    const parsed = JSON.parse(raw) as { version?: number; mcpServers?: Record<string, unknown> };
-    return Object.keys(parsed.mcpServers ?? {});
-  } catch {
-    return [];
-  }
 }
 
 /**
