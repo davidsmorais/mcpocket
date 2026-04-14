@@ -1,3 +1,4 @@
+import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { encryptStringMap, decryptStringMap } from '../utils/crypto.js';
 import { normalizePath, expandPath, normalizeCommand, expandCommand, normalizeArgs, expandArgs } from '../utils/paths.js';
@@ -6,6 +7,22 @@ import type { McpServersMap, McpServerConfig } from '../clients/types.js';
 export interface PortableMcpConfig {
   version: 1;
   mcpServers: McpServersMap;
+}
+
+/**
+ * Read MCP server names from a pocket's mcp-config.json without decrypting.
+ * Server names (keys) are stored in plaintext; only their env/headers values are encrypted.
+ */
+export function listPocketMcpServerNames(repoDir: string): string[] {
+  const configPath = path.join(repoDir, 'mcp-config.json');
+  if (!fs.existsSync(configPath)) return [];
+  try {
+    const raw = fs.readFileSync(configPath, 'utf8');
+    const parsed = JSON.parse(raw) as { version?: number; mcpServers?: Record<string, unknown> };
+    return Object.keys(parsed.mcpServers ?? {});
+  } catch {
+    return [];
+  }
 }
 
 /**

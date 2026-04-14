@@ -37,8 +37,10 @@ export async function askMultiSelect<T>(
 ): Promise<T[]> {
   if (options.length === 0) return [];
 
+  // Non-TTY (piped input, CI, scripts): return all items silently so automated
+  // workflows continue to sync everything without hanging on a prompt.
   if (!process.stdin.isTTY) {
-    return askMultiSelectLegacy(question, options);
+    return options.map((o) => o.value);
   }
 
   // Start with everything selected — user deselects what they don't want.
