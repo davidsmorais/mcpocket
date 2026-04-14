@@ -18,13 +18,143 @@ export interface MultiSelectOption<T> {
 }
 
 /**
- * Show a numbered list of options and let the user pick a subset by typing
- * comma-separated numbers (e.g. "1,3"). Pressing Enter with no input selects all.
- * Returns the selected values.
+ * Interactive multi-select with keyboard navigation.
+ *
+ * Controls:
+ *   ↑ / k       — move cursor up
+ *   ↓ / j       — move cursor down
+ *   space       — toggle item
+ *   a           — toggle all on / all off
+ *   enter       — confirm selection
+ *   ctrl+c      — exit
+ *
+ * Falls back to numbered comma-separated input when stdin is not a TTY
+ * (e.g. piped input, CI environments).
  */
 export async function askMultiSelect<T>(
   question: string,
-  options: MultiSelectOption<T>[]
+  options: MultiSelectOption<T>[],
+): Promise<T[]> {
+  if (options.length === 0) return [];
+
+  if (!process.stdin.isTTY) {
+    return askMultiSelectLegacy(question, options);
+  }
+
+  // Start with everything selected — user deselects what they don't want.
+  const selected = new Set<number>(options.map((_, i) => i));
+  let cursor = 0;
+  let initialRender = true;
+
+  // question line + one line per option + hint line
+  const BLOCK_LINES = options.length + 2;
+
+  function render(): void {
+    if (!initialRender) {
+      // Jump back to the first line of our block
+      process.stdout.write(`\x1b[${BLOCK_LINES}F`);
+    }
+    initialRender = false;
+
+    // Question
+    process.stdout.write(`\x1b[2K  ${question}\n`);
+
+    // Options
+    for (let i = 0; i < options.length; i++) {
+      const isActive   = i === cursor;
+      const isSelected = selected.has(i);
+      const pointer    = isActive   ? c.cyan('❯') : ' ';
+      const checkbox   = isSelected ? c.green('◉') : c.dim('○');
+      const label      = isActive   ? c.bold(options[i].label) : options[i].label;
+      process.stdout.write(`\x1b[2K  ${pointer} ${checkbox} ${label}\n`);
+    }
+
+    // Hint
+    process.stdout.write(
+      `\x1b[2K${c.dim('  ↑↓ navigate   space toggle   a toggle all   enter confirm')}\n`,
+    );
+  }
+
+  // Hide cursor while navigating
+  process.stdout.write('\x1b[?25l');
+  render();
+
+  return new Promise((resolve) => {
+    process.stdin.setRawMode(true);
+    process.stdin.resume();
+    process.stdin.setEncoding('utf8');
+
+    function cleanup(): void {
+      process.stdin.removeListener('data', onData);
+      process.stdin.setRawMode(false);
+      process.stdin.pause();
+      process.stdout.write('\x1b[?25h'); // restore cursor
+    }
+
+    function onData(key: string): void {
+      // Ctrl+C — abort
+      if (key === '\u0003') {
+        cleanup();
+        process.stdout.write('\n');
+        process.exit(1);
+      }
+
+      // Enter — confirm
+      if (key === '\r' || key === '\n') {
+        cleanup();
+        process.stdout.write('\n');
+        resolve(options.filter((_, i) => selected.has(i)).map((o) => o.value));
+        return;
+      }
+
+      // Space — toggle current item
+      if (key === ' ') {
+        if (selected.has(cursor)) {
+          selected.delete(cursor);
+        } else {
+          selected.add(cursor);
+        }
+        render();
+        return;
+      }
+
+      // a / A — toggle all on or all off
+      if (key === 'a' || key === 'A') {
+        if (selected.size === options.length) {
+          selected.clear();
+        } else {
+          for (let i = 0; i < options.length; i++) selected.add(i);
+        }
+        render();
+        return;
+      }
+
+      // Arrow up or k — move cursor up (wraps)
+      if (key === '\x1b[A' || key === 'k') {
+        cursor = (cursor - 1 + options.length) % options.length;
+        render();
+        return;
+      }
+
+      // Arrow down or j — move cursor down (wraps)
+      if (key === '\x1b[B' || key === 'j') {
+        cursor = (cursor + 1) % options.length;
+        render();
+        return;
+      }
+    }
+
+    process.stdin.on('data', onData);
+  });
+}
+
+/**
+ * Fallback for non-TTY environments: numbered list with comma-separated input.
+ * Enter with no input selects all.
+ */
+async function askMultiSelectLegacy<T>(
+  question: string,
+  options: MultiSelectOption<T>[],
 ): Promise<T[]> {
   console.log(`\n  ${question}`);
   options.forEach((opt, i) => {
