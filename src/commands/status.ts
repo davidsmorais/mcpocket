@@ -1,6 +1,6 @@
 import * as fs from 'fs';
 import * as path from 'path';
-import { readConfig, getLocalRepoDir } from '../config.js';
+import { readConfig, getLocalRepoDir, resolveToken } from '../config.js';
 import { pullRepo } from '../storage/github.js';
 import { fetchGist, writeGistFilesToDir } from '../storage/gist.js';
 import { readClaudeDesktopMcpServers } from '../clients/claude-desktop.js';
@@ -18,7 +18,7 @@ export async function statusCommand(): Promise<void> {
 
   if (config.storageType === 'gist') {
     try {
-      const { files: gistFiles } = await fetchGist(config.githubToken, config.gistId!);
+      const { files: gistFiles } = await fetchGist(resolveToken(config), config.gistId!);
       fs.mkdirSync(repoDir, { recursive: true });
       writeGistFilesToDir(repoDir, gistFiles);
     } catch (err) {
@@ -26,7 +26,7 @@ export async function statusCommand(): Promise<void> {
     }
   } else {
     try {
-      pullRepo(repoDir, config.githubToken, config.repoCloneUrl!);
+      pullRepo(repoDir, resolveToken(config), config.repoCloneUrl!);
     } catch (err) {
       heads_up(`Could not pull latest — ${(err as Error).message}`);
     }

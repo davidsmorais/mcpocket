@@ -1,6 +1,6 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { readConfig, getLocalRepoDir } from '../config.js';
+import { readConfig, getLocalRepoDir, resolveToken } from '../config.js';
 import type { SyncCategory } from '../config.js';
 import { pullRepo, commitAndPush, ensureGitConfig } from '../storage/github.js';
 import { collectFilesFromDir, updateGist } from '../storage/gist.js';
@@ -40,7 +40,7 @@ export async function pushCommand(
     sparkle(`Sync scope: ${formatProviderList(selection.selected)}`);
   }
 
-  preparePocketDirectory(config.storageType, repoDir, config.githubToken, config.repoCloneUrl);
+  preparePocketDirectory(config.storageType, repoDir, resolveToken(config), config.repoCloneUrl);
 
   const prunedEntries = prunePocketDir(repoDir);
   if (prunedEntries > 0) {
@@ -123,7 +123,7 @@ export async function pushCommand(
   if (config.storageType === 'gist') {
     try {
       const files = collectFilesFromDir(repoDir);
-      await updateGist(config.githubToken, config.gistId!, files);
+      await updateGist(resolveToken(config), config.gistId!, files);
       celebrate(WITTY.pushDone);
       heads_up(`Pocket URL: ${c.cyan(config.gistUrl!)}  ← save this to connect from another machine!`);
     } catch (err) {
@@ -133,7 +133,7 @@ export async function pushCommand(
   } else {
     ensureGitConfig(repoDir);
     try {
-      commitAndPush(repoDir, config.githubToken, config.repoCloneUrl!, 'mcpocket: push');
+      commitAndPush(repoDir, resolveToken(config), config.repoCloneUrl!, 'mcpocket: push');
       celebrate(WITTY.pushDone);
     } catch (err) {
       oops(`Push failed: ${(err as Error).message}`);

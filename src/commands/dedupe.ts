@@ -1,5 +1,5 @@
 import * as fs from 'fs';
-import { readConfig, getLocalRepoDir } from '../config.js';
+import { readConfig, getLocalRepoDir, resolveToken } from '../config.js';
 import { pullRepo, commitAndPush, ensureGitConfig } from '../storage/github.js';
 import { fetchGist, writeGistFilesToDir, collectFilesFromDir, updateGist } from '../storage/gist.js';
 import {
@@ -22,7 +22,7 @@ export async function dedupeCommand(): Promise<void> {
 
   if (config.storageType === 'gist') {
     try {
-      const { files: gistFiles } = await fetchGist(config.githubToken, config.gistId!);
+      const { files: gistFiles } = await fetchGist(resolveToken(config), config.gistId!);
       fs.mkdirSync(repoDir, { recursive: true });
       writeGistFilesToDir(repoDir, gistFiles);
     } catch (err) {
@@ -31,7 +31,7 @@ export async function dedupeCommand(): Promise<void> {
     }
   } else {
     try {
-      pullRepo(repoDir, config.githubToken, config.repoCloneUrl!);
+      pullRepo(repoDir, resolveToken(config), config.repoCloneUrl!);
       ensureGitConfig(repoDir);
     } catch (err) {
       oops((err as Error).message);
@@ -54,14 +54,14 @@ export async function dedupeCommand(): Promise<void> {
   const pocketFiles = collectFilesFromDir(repoDir);
   if (config.storageType === 'gist') {
     try {
-      await updateGist(config.githubToken, config.gistId!, pocketFiles);
+      await updateGist(resolveToken(config), config.gistId!, pocketFiles);
     } catch (err) {
       oops(`Gist de-dupe failed: ${(err as Error).message}`);
       process.exit(1);
     }
   } else {
     try {
-      commitAndPush(repoDir, config.githubToken, config.repoCloneUrl!, 'mcpocket: dedupe');
+      commitAndPush(repoDir, resolveToken(config), config.repoCloneUrl!, 'mcpocket: dedupe');
     } catch (err) {
       oops(`De-dupe push failed: ${(err as Error).message}`);
       process.exit(1);

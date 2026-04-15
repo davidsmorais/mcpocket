@@ -1,6 +1,6 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { readConfig, getLocalRepoDir } from '../config.js';
+import { readConfig, getLocalRepoDir, resolveToken } from '../config.js';
 import type { SyncCategory } from '../config.js';
 import { pullRepo, ensureGitConfig } from '../storage/github.js';
 import { fetchGist, writeGistFilesToDir } from '../storage/gist.js';
@@ -148,7 +148,7 @@ async function syncPocketToLocal(
 ): Promise<void> {
   if (config.storageType === 'gist') {
     try {
-      const { files: gistFiles, truncated } = await fetchGist(config.githubToken, config.gistId!);
+      const { files: gistFiles, truncated } = await fetchGist(resolveToken(config), config.gistId!);
       fs.mkdirSync(repoDir, { recursive: true });
       writeGistFilesToDir(repoDir, gistFiles);
       if (truncated) {
@@ -165,7 +165,7 @@ async function syncPocketToLocal(
   }
 
   try {
-    pullRepo(repoDir, config.githubToken, config.repoCloneUrl!);
+    pullRepo(repoDir, resolveToken(config), config.repoCloneUrl!);
     ensureGitConfig(repoDir);
   } catch (err) {
     oops((err as Error).message);

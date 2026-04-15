@@ -186,6 +186,97 @@ async function askMultiSelectLegacy<T>(
   return deduped;
 }
 
+/**
+ * Interactive single-select with keyboard navigation.
+ *
+ * Controls:
+ *   ↑ / k   — move cursor up
+ *   ↓ / j   — move cursor down
+ *   enter   — confirm selection
+ *   ctrl+c  — exit
+ *
+ * Falls back to the first option when stdin is not a TTY.
+ */
+export async function askSingleSelect<T>(
+  question: string,
+  options: MultiSelectOption<T>[],
+): Promise<T> {
+  if (options.length === 0) throw new Error('No options to select from.');
+
+  if (!process.stdin.isTTY) {
+    return options[0].value;
+  }
+
+  let cursor = 0;
+  let initialRender = true;
+  const BLOCK_LINES = options.length + 2;
+
+  function render(): void {
+    if (!initialRender) {
+      process.stdout.write(`\x1b[${BLOCK_LINES}F`);
+    }
+    initialRender = false;
+
+    process.stdout.write(`\x1b[2K  ${question}\n`);
+
+    for (let i = 0; i < options.length; i++) {
+      const isActive = i === cursor;
+      const pointer = isActive ? c.cyan('❯') : ' ';
+      const label   = isActive ? c.bold(options[i].label) : options[i].label;
+      process.stdout.write(`\x1b[2K  ${pointer} ${label}\n`);
+    }
+
+    process.stdout.write(
+      `\x1b[2K${c.dim('  ↑↓ navigate   enter select')}\n`,
+    );
+  }
+
+  process.stdout.write('\x1b[?25l');
+  render();
+
+  return new Promise((resolve) => {
+    process.stdin.setRawMode(true);
+    process.stdin.resume();
+    process.stdin.setEncoding('utf8');
+
+    function cleanup(): void {
+      process.stdin.removeListener('data', onData);
+      process.stdin.setRawMode(false);
+      process.stdin.pause();
+      process.stdout.write('\x1b[?25h');
+    }
+
+    function onData(key: string): void {
+      if (key === '\u0003') {
+        cleanup();
+        process.stdout.write('\n');
+        process.exit(1);
+      }
+
+      if (key === '\r' || key === '\n') {
+        cleanup();
+        process.stdout.write('\n');
+        resolve(options[cursor].value);
+        return;
+      }
+
+      if (key === '\x1b[A' || key === 'k') {
+        cursor = (cursor - 1 + options.length) % options.length;
+        render();
+        return;
+      }
+
+      if (key === '\x1b[B' || key === 'j') {
+        cursor = (cursor + 1) % options.length;
+        render();
+        return;
+      }
+    }
+
+    process.stdin.on('data', onData);
+  });
+}
+
 /** Prompt for a hidden password (no echo) */
 export function askSecret(question: string): Promise<string> {
   return new Promise((resolve) => {

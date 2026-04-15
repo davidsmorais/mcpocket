@@ -70,9 +70,9 @@ program
   .action((options) => cleanupCommand(options).catch(die));
 
 program
-  .command('set <pocketUrl>')
-  .description('Point mcpocket at a different pocket (gist URL, gist ID, repo URL, or owner/repo)')
-  .action((url: string) => setCommand(url).catch(die));
+  .command('set')
+  .description('Switch your pocket — choose a repo or gist from your GitHub account')
+  .action(() => setCommand().catch(die));
 
 program
   .command('status')

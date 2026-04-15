@@ -1,6 +1,6 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { readConfig, getLocalRepoDir } from '../config.js';
+import { readConfig, getLocalRepoDir, resolveToken } from '../config.js';
 import type { McpocketConfig } from '../config.js';
 import { pullRepo, commitAndPush, ensureGitConfig } from '../storage/github.js';
 import { fetchGist, writeGistFilesToDir, collectFilesFromDir, updateGist } from '../storage/gist.js';
@@ -336,7 +336,7 @@ function printItemsToDelete(items: PocketItem[]): void {
 async function pullPocketToLocal(config: McpocketConfig, repoDir: string): Promise<void> {
   if (config.storageType === 'gist') {
     try {
-      const { files: gistFiles, truncated } = await fetchGist(config.githubToken, config.gistId!);
+      const { files: gistFiles, truncated } = await fetchGist(resolveToken(config), config.gistId!);
       fs.mkdirSync(repoDir, { recursive: true });
       writeGistFilesToDir(repoDir, gistFiles);
       if (truncated) {
@@ -353,7 +353,7 @@ async function pullPocketToLocal(config: McpocketConfig, repoDir: string): Promi
   }
 
   try {
-    pullRepo(repoDir, config.githubToken, config.repoCloneUrl!);
+    pullRepo(repoDir, resolveToken(config), config.repoCloneUrl!);
     ensureGitConfig(repoDir);
   } catch (err) {
     oops((err as Error).message);
@@ -366,7 +366,7 @@ async function pushPocketToRemote(config: McpocketConfig, repoDir: string): Prom
   if (config.storageType === 'gist') {
     try {
       const files = collectFilesFromDir(repoDir);
-      await updateGist(config.githubToken, config.gistId!, files);
+      await updateGist(resolveToken(config), config.gistId!, files);
     } catch (err) {
       oops(`Gist push failed: ${(err as Error).message}`);
       process.exit(1);
@@ -376,7 +376,7 @@ async function pushPocketToRemote(config: McpocketConfig, repoDir: string): Prom
 
   ensureGitConfig(repoDir);
   try {
-    commitAndPush(repoDir, config.githubToken, config.repoCloneUrl!, 'mcpocket: cleanup');
+    commitAndPush(repoDir, resolveToken(config), config.repoCloneUrl!, 'mcpocket: cleanup');
   } catch (err) {
     oops(`Push failed: ${(err as Error).message}`);
     process.exit(1);

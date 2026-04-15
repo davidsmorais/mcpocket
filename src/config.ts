@@ -2,13 +2,14 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
 import { getMcpocketConfigDir, getMcpocketConfigPath } from './utils/paths.js';
+import { getGhToken } from './storage/gh-cli.js';
 
 export type StorageType = 'repo' | 'gist';
 export type SyncCategory = 'mcps' | 'agents' | 'skills' | 'plugins';
 export const ALL_SYNC_CATEGORIES: SyncCategory[] = ['mcps', 'agents', 'skills', 'plugins'];
 
 export interface McpocketConfig {
-  githubToken: string;
+  githubToken?: string;  // optional — obtained from GH CLI when absent
   storageType: StorageType;
   // Repo storage
   repoFullName?: string;
@@ -61,4 +62,14 @@ export function writeConfig(config: McpocketConfig): void {
 /** Local staging directory for synced pocket contents */
 export function getLocalRepoDir(): string {
   return path.join(os.homedir(), '.mcpocket', 'repo');
+}
+
+/**
+ * Resolve the GitHub token: use the stored token when available (backward
+ * compat for configs created before GH CLI auth), otherwise fall back to the
+ * token from the GH CLI (`gh auth token`).
+ */
+export function resolveToken(config: McpocketConfig): string {
+  if (config.githubToken) return config.githubToken;
+  return getGhToken();
 }
