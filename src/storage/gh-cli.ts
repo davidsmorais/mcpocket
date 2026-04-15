@@ -65,12 +65,15 @@ export function listGhRepos(limit = 50): GhRepo[] {
 /** List the authenticated user's gists, ordered by most recently updated */
 export function listGhGists(limit = 50): GhGist[] {
   const { stdout, ok, stderr } = run([
-    'gist', 'list',
-    '--json', 'id,description,url,updatedAt,isPublic',
-    '--limit', String(limit),
+    'api', `/gists?per_page=${limit}`,
+    '--jq', '.[] | {id, description, url: .html_url, updatedAt: .updated_at, isPublic: .public}',
   ]);
   if (!ok) {
     throw new Error(`Could not list gists: ${stderr}`);
   }
-  return JSON.parse(stdout) as GhGist[];
+  // `--jq` with multiple results emits one JSON object per line (NDJSON)
+  return stdout
+    .split('\n')
+    .filter(Boolean)
+    .map((line) => JSON.parse(line) as GhGist);
 }
