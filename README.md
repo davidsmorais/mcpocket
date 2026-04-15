@@ -22,6 +22,14 @@ You install 8 MCP servers, configure your Claude Code plugins, and build up a li
 
 **mcpocket** fixes that with two commands: `push` from your source machine, `pull` on any other.
 
+## How It Works
+
+<p align="center">
+  <img src="./mcpocket.png" alt="mcpocket architecture diagram" width="800" />
+</p>
+
+mcpocket acts as a centralized sync hub for your AI setup. Push your configuration from any machine to GitHub (as a repo or gist), then pull it anywhere else. MCP servers, Claude Code agents, skills, plugins—everything syncs with end-to-end encryption for your secrets.
+
 ## Features
 
 - **Multi-client sync** — Claude Desktop, Claude Code, OpenCode, Copilot CLI, Cursor, Codex, and Antigravity configs in one shot
