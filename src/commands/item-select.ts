@@ -16,6 +16,7 @@ export interface ItemFilters {
   mcpNames?: ReadonlySet<string>;
   agentNames?: ReadonlySet<string>;
   skillNames?: ReadonlySet<string>;
+  pluginNames?: ReadonlySet<string>;
 }
 
 const KIND_LABEL: Record<SyncItemKind, string> = {

@@ -20,6 +20,10 @@ export interface McpocketConfig {
   // Sync scope (undefined = all)
   syncCategories?: SyncCategory[];
   syncProviders?: string[];
+  // Individual item selection (when using --ui flag)
+  syncAgents?: string[];
+  syncSkills?: string[];
+  syncPlugins?: string[];
   // Cleanup filters (used by `mcpocket cleanup --local`)
   cleanupInclude?: string[];
   cleanupExclude?: string[];

@@ -5,8 +5,16 @@ import type { StorageType, SyncCategory } from '../config.js';
 import { ALL_PROVIDERS } from '../clients/providers.js';
 import { ask, askSecret, askMultiSelect } from '../utils/prompt.js';
 import { sparkle, celebrate, section, oops, heads_up, WITTY, c } from '../utils/sparkle.js';
+import { openSelectionUi, type UiItems } from './ui-server.js';
+import { listLocalAgentNames } from '../sync/agents.js';
+import { listLocalSkillNames } from '../sync/skills.js';
+import { readPluginManifests } from '../sync/plugins.js';
 
-export async function initCommand(): Promise<void> {
+export interface InitOptions {
+  ui?: boolean;
+}
+
+export async function initCommand(options: InitOptions = {}): Promise<void> {
   section('Init');
 
   if (configExists()) {
@@ -86,7 +94,7 @@ export async function initCommand(): Promise<void> {
     const fs = await import('fs');
     fs.mkdirSync(localDir, { recursive: true });
 
-    const { syncCategories, syncProviders } = await askSyncScope();
+    const { syncCategories, syncProviders, syncAgents, syncSkills, syncPlugins } = await askSyncScope(options.ui);
 
     writeConfig({
       githubToken: token,
@@ -95,6 +103,9 @@ export async function initCommand(): Promise<void> {
       gistUrl: gistInfo.htmlUrl,
       syncCategories,
       syncProviders,
+      syncAgents,
+      syncSkills,
+      syncPlugins,
     });
   } else {
     let repoInfo: Awaited<ReturnType<typeof createRepo>>;
@@ -136,7 +147,7 @@ export async function initCommand(): Promise<void> {
       process.exit(1);
     }
 
-    const { syncCategories, syncProviders } = await askSyncScope();
+    const { syncCategories, syncProviders, syncAgents, syncSkills, syncPlugins } = await askSyncScope(options.ui);
 
     writeConfig({
       githubToken: token,
@@ -146,6 +157,9 @@ export async function initCommand(): Promise<void> {
       repoHtmlUrl: repoInfo.htmlUrl,
       syncCategories,
       syncProviders,
+      syncAgents,
+      syncSkills,
+      syncPlugins,
     });
   }
 
@@ -156,7 +170,15 @@ export async function initCommand(): Promise<void> {
   console.log('');
 }
 
-async function askSyncScope(): Promise<{ syncCategories: SyncCategory[]; syncProviders: string[] }> {
+interface AskSyncScopeResult {
+  syncCategories: SyncCategory[];
+  syncProviders: string[];
+  syncAgents?: string[];
+  syncSkills?: string[];
+  syncPlugins?: string[];
+}
+
+async function askSyncScope(useUI?: boolean): Promise<AskSyncScopeResult> {
   section('Sync Scope');
   sparkle('Choose what mcpocket will sync for you.');
 
@@ -184,5 +206,42 @@ async function askSyncScope(): Promise<{ syncCategories: SyncCategory[]; syncPro
     )) as string[];
   }
 
-  return { syncCategories, syncProviders };
+  let syncAgents: string[] | undefined;
+  let syncSkills: string[] | undefined;
+  let syncPlugins: string[] | undefined;
+
+  if (useUI) {
+    console.log('');
+    sparkle('Opening browser UI for individual item selection...');
+
+    const agentNames = syncCategories.includes('agents') ? listLocalAgentNames() : [];
+    const skillNames = syncCategories.includes('skills') ? listLocalSkillNames() : [];
+    const mcpNames = syncCategories.includes('mcps') ? syncProviders : [];
+
+    const manifests = syncCategories.includes('plugins') ? readPluginManifests() : {};
+    const pluginNames = Object.keys(manifests.hasOwnProperty('plugins/installed_plugins.json')
+      ? ((manifests['plugins/installed_plugins.json'] as Record<string, unknown>) || {})
+      : {});
+
+    const uiItems: UiItems = {
+      agents: agentNames,
+      skills: skillNames,
+      mcps: mcpNames,
+      ...(pluginNames.length > 0 && { plugins: pluginNames }),
+    };
+
+    const filters = await openSelectionUi(uiItems, 'push');
+
+    if (filters.agentNames) {
+      syncAgents = Array.from(filters.agentNames);
+    }
+    if (filters.skillNames) {
+      syncSkills = Array.from(filters.skillNames);
+    }
+    if (filters.pluginNames) {
+      syncPlugins = Array.from(filters.pluginNames);
+    }
+  }
+
+  return { syncCategories, syncProviders, syncAgents, syncSkills, syncPlugins };
 }

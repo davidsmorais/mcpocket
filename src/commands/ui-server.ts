@@ -9,6 +9,7 @@ export interface UiItems {
   agents: string[];
   skills: string[];
   mcps:   string[];
+  plugins?: string[];
 }
 
 /**
@@ -39,7 +40,7 @@ export async function openSelectionUi(
         req.on('data', (chunk: Buffer) => { body += chunk.toString(); });
         req.on('end', () => {
           try {
-            const sel: { agents: string[]; skills: string[]; mcps: string[] } = JSON.parse(body);
+            const sel: { agents: string[]; skills: string[]; mcps: string[]; plugins?: string[] } = JSON.parse(body);
             res.writeHead(200, { 'Content-Type': 'application/json' });
             res.end(JSON.stringify({ ok: true }));
             server.close();
@@ -77,13 +78,16 @@ export async function openSelectionUi(
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 function buildFilters(
-  sel: { agents: string[]; skills: string[]; mcps: string[] },
+  sel: { agents: string[]; skills: string[]; mcps: string[]; plugins?: string[] },
   available: UiItems,
 ): ItemFilters {
   const filters: ItemFilters = {};
   if (sel.agents.length < available.agents.length) filters.agentNames = new Set(sel.agents);
   if (sel.skills.length < available.skills.length) filters.skillNames = new Set(sel.skills);
   if (sel.mcps.length   < available.mcps.length)   filters.mcpNames   = new Set(sel.mcps);
+  if (available.plugins && sel.plugins && sel.plugins.length < available.plugins.length) {
+    filters.pluginNames = new Set(sel.plugins);
+  }
   return filters;
 }
 
@@ -147,6 +151,7 @@ function buildHtml(items: UiItems, action: 'push' | 'pull'): string {
     renderGroup('agents', 'Agents',      'var(--blue)',    items.agents),
     renderGroup('skills', 'Skills',      'var(--purple)',  items.skills),
     renderGroup('mcps',   'MCP Servers', 'var(--green)',   items.mcps),
+    ...(items.plugins && items.plugins.length > 0 ? [renderGroup('plugins', 'Plugins', 'var(--yellow)', items.plugins)] : []),
   ].join('');
 
   return `<!DOCTYPE html>
@@ -238,8 +243,10 @@ function countFor(kind){
 }
 function updateCounts(){
   let total=0,sel=0;
-  ['agents','skills','mcps'].forEach(k=>{
-    const all=ITEMS[k].length, s=countFor(k);
+  const kinds=['agents','skills','mcps'];
+  if(ITEMS.plugins) kinds.push('plugins');
+  kinds.forEach(k=>{
+    const all=ITEMS[k]?.length || 0, s=countFor(k);
     total+=all; sel+=s;
     const el=document.getElementById('cnt-'+k);
     if(el) el.innerHTML='<b>'+s+'</b>/'+all;
@@ -259,7 +266,12 @@ document.addEventListener('change',updateCounts);
 
 async function submitSel(){
   const sel={agents:[],skills:[],mcps:[]};
-  ['agents','skills','mcps'].forEach(k=>{
+  const kinds=['agents','skills','mcps'];
+  if(ITEMS.plugins) {
+    sel.plugins=[];
+    kinds.push('plugins');
+  }
+  kinds.forEach(k=>{
     document.querySelectorAll('[data-kind='+k+']:checked')
       .forEach(b=>sel[k].push(b.value));
   });

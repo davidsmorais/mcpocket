@@ -5,7 +5,8 @@
       "Bash(rtk git:*)",
       "Bash(gh pr create --title 'feat: add set command, fix gist pull, show URL on push \\(v0.3.1\\)' --body ':*)",
       "Bash(gh pr:*)",
-      "Bash(npm publish:*)"
+      "Bash(npm publish:*)",
+      "Bash(rtk find:*)"
     ]
   }
 }
