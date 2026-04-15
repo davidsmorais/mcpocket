@@ -62,6 +62,7 @@ export async function pushCommand(
     ? listLocalSkillNames()
     : [];
   const allMcpNames = Object.keys(allMcps);
+  const allPluginPaths = activeCategories.has('plugins') ? Object.keys(readPluginManifests()) : [];
 
   // ── Item selection ────────────────────────────────────────────────────────
 
@@ -69,7 +70,7 @@ export async function pushCommand(
 
   if (options.ui) {
     filters = await openSelectionUi(
-      { agents: allAgentNames, skills: allSkillNames, mcps: allMcpNames },
+      { agents: allAgentNames, skills: allSkillNames, mcps: allMcpNames, plugins: allPluginPaths },
       'push',
     );
   } else if (options.interactive) {
@@ -223,9 +224,12 @@ function syncClaudeHomeAssetsToPocket(
   if (shouldSyncPlugins) {
     sparkle(WITTY.readingPlugins);
     const manifests = readPluginManifests();
-    manifestCount = Object.keys(manifests).length;
+    const filteredManifests = filters.pluginNames
+      ? Object.fromEntries(Object.entries(manifests).filter(([key]) => filters.pluginNames!.has(key)))
+      : manifests;
+    manifestCount = Object.keys(filteredManifests).length;
     sparkle(`Found ${manifestCount} plugin manifest file(s)`);
-    pluginResult = writePluginManifestsToRepo(manifests, repoDir);
+    pluginResult = writePluginManifestsToRepo(filteredManifests, repoDir);
     if (pluginResult.removed > 0) {
       sparkle(`Removed ${pluginResult.removed} stale plugin manifest file(s) from the pocket`);
     }

@@ -126,13 +126,9 @@ function renderBreadcrumb(name: string): string {
   return `${breadcrumbs}<span class="path-sep">›</span><span class="path-name">${esc(fileName)}</span>`;
 }
 
-function renderGroup(
-  kind: string,
-  title: string,
-  colorVar: string,
-  names: string[],
-): string {
-  const items = names
+/** Render a flat list of items as checkboxes. */
+function renderFlatItems(kind: string, names: string[]): string {
+  return names
     .map(
       (n) => `
         <label class="item" title="${esc(n)}">
@@ -141,8 +137,89 @@ function renderGroup(
         </label>`,
     )
     .join('');
+}
 
-  const empty = `<div class="empty">No ${title.toLowerCase()} found</div>`;
+/**
+ * Render items that may have nested directory paths.
+ * Top-level items that have children become collapsible sections.
+ */
+function renderCollapsibleItems(kind: string, names: string[]): string {
+  // Partition into roots (no separator) and children (have separator)
+  const rootSet = new Set(names.filter((n) => !n.includes('/') && !n.includes('\\')));
+
+  // Map each root to its list of children
+  const childrenMap = new Map<string, string[]>();
+  for (const root of rootSet) childrenMap.set(root, []);
+
+  for (const name of names) {
+    if (rootSet.has(name)) continue;
+    const sep = name.includes('/') ? '/' : '\\';
+    const root = name.split(sep)[0];
+    if (childrenMap.has(root)) {
+      childrenMap.get(root)!.push(name);
+    }
+  }
+
+  let html = '';
+  for (const [rootName, children] of childrenMap) {
+    if (children.length === 0) {
+      // Simple standalone item
+      html += `
+        <label class="item" title="${esc(rootName)}">
+          <input type="checkbox" data-kind="${kind}" value="${esc(rootName)}" checked>
+          <span class="name">${esc(rootName)}</span>
+        </label>`;
+    } else {
+      // Collapsible directory
+      const safeId = `${kind}-${rootName.replace(/[^a-zA-Z0-9]/g, '-')}`;
+      const childHtml = children
+        .map(
+          (child) => `
+        <label class="item child-item" title="${esc(child)}">
+          <input type="checkbox" data-kind="${kind}" value="${esc(child)}" data-parent="${esc(rootName)}" checked>
+          <span class="name">${renderBreadcrumb(child)}</span>
+        </label>`,
+        )
+        .join('');
+
+      html += `
+        <div class="dir-group" id="dir-${safeId}">
+          <div class="dir-row">
+            <label class="item" title="${esc(rootName)}">
+              <input type="checkbox" data-kind="${kind}" value="${esc(rootName)}" data-dir="${esc(rootName)}" checked>
+              <span class="name">${esc(rootName)}</span>
+            </label>
+            <button class="expand-btn" onclick="toggleDir('${safeId}')" title="Expand/collapse">
+              <span class="expand-icon">▶</span><span class="child-badge">${children.length}</span>
+            </button>
+          </div>
+          <div class="dir-children" id="children-${safeId}" hidden>${childHtml}</div>
+        </div>`;
+    }
+  }
+  return html;
+}
+
+function renderGroup(
+  kind: string,
+  title: string,
+  colorVar: string,
+  names: string[],
+): string {
+  // Use collapsible rendering if any root item has children in the list
+  const rootSet = new Set(names.filter((n) => !n.includes('/') && !n.includes('\\')));
+  const hasCollapsible = [...rootSet].some((root) =>
+    names.some((n) => n.startsWith(root + '/') || n.startsWith(root + '\\')),
+  );
+
+  let bodyHtml: string;
+  if (names.length === 0) {
+    bodyHtml = `<div class="empty">No ${title.toLowerCase()} found</div>`;
+  } else if (hasCollapsible) {
+    bodyHtml = renderCollapsibleItems(kind, names);
+  } else {
+    bodyHtml = renderFlatItems(kind, names);
+  }
 
   return `
   <div class="group" id="grp-${kind}">
@@ -151,7 +228,7 @@ function renderGroup(
       <span class="grp-count" id="cnt-${kind}"><b>${names.length}</b>/${names.length}</span>
       ${names.length > 0 ? `<button class="toggle-btn" onclick="toggleGroup('${kind}')">toggle all</button>` : ''}
     </div>
-    <div class="group-body">${names.length > 0 ? items : empty}</div>
+    <div class="group-body">${bodyHtml}</div>
   </div>`;
 }
 
@@ -161,9 +238,9 @@ function buildHtml(items: UiItems, action: 'push' | 'pull'): string {
   const itemsJson   = JSON.stringify(items);
 
   const groups = [
-    renderGroup('agents', 'Agents',      'var(--blue)',    items.agents),
-    renderGroup('skills', 'Skills',      'var(--purple)',  items.skills),
-    renderGroup('mcps',   'MCP Servers', 'var(--green)',   items.mcps),
+    renderGroup('agents',  'Agents',       'var(--blue)',    items.agents),
+    renderGroup('skills',  'Skills',       'var(--purple)',  items.skills),
+    renderGroup('mcps',    'AI Providers', 'var(--green)',   items.mcps),
     ...(items.plugins && items.plugins.length > 0 ? [renderGroup('plugins', 'Plugins', 'var(--yellow)', items.plugins)] : []),
   ].join('');
 
@@ -203,7 +280,7 @@ main{flex:1;padding:24px 32px;max-width:760px;width:100%;margin:0 auto;display:f
 .toggle-btn:hover{background:rgba(88,166,255,.12)}
 .group-body{padding:6px 0}
 
-/* items */
+/* flat items */
 .item{display:flex;align-items:center;gap:11px;padding:7px 14px;cursor:pointer;transition:background .1s}
 .item:hover{background:rgba(255,255,255,.04)}
 .item input[type=checkbox]{width:14px;height:14px;accent-color:var(--blue);cursor:pointer;flex-shrink:0}
@@ -212,6 +289,19 @@ main{flex:1;padding:24px 32px;max-width:760px;width:100%;margin:0 auto;display:f
 .path-sep{color:var(--muted);margin:0 1px}
 .path-name{color:var(--text);font-weight:500}
 .empty{padding:14px;font-size:12px;color:var(--muted);text-align:center;font-style:italic}
+
+/* collapsible directories */
+.dir-group{border-bottom:1px solid rgba(255,255,255,.04)}
+.dir-group:last-child{border-bottom:none}
+.dir-row{display:flex;align-items:center;background:rgba(255,255,255,.015)}
+.dir-row .item{flex:1}
+.expand-btn{font-family:var(--font);font-size:11px;color:var(--muted);background:none;border:none;cursor:pointer;padding:6px 12px;display:flex;align-items:center;gap:5px;border-radius:4px;margin-right:4px;white-space:nowrap}
+.expand-btn:hover{color:var(--text)}
+.expand-icon{font-size:10px;transition:transform .15s;display:inline-block}
+.expand-btn.expanded .expand-icon{transform:rotate(90deg)}
+.child-badge{font-size:10px;color:var(--muted);background:rgba(255,255,255,.08);padding:1px 5px;border-radius:3px}
+.dir-children{border-top:1px solid rgba(255,255,255,.04)}
+.child-item{padding-left:30px}
 
 /* footer */
 footer{position:sticky;bottom:0;background:var(--bg);border-top:1px solid var(--border);padding:14px 32px;display:flex;align-items:center;justify-content:space-between;gap:16px}
@@ -274,11 +364,41 @@ function updateCounts(){
 function toggleGroup(kind){
   const boxes=[...document.querySelectorAll('[data-kind='+kind+']')];
   const allOn=boxes.every(b=>b.checked);
-  boxes.forEach(b=>b.checked=!allOn);
+  boxes.forEach(b=>{b.checked=!allOn;b.indeterminate=false;});
   updateCounts();
 }
 
-document.addEventListener('change',updateCounts);
+function toggleDir(safeId){
+  const children=document.getElementById('children-'+safeId);
+  const btn=document.querySelector('#dir-'+safeId+' .expand-btn');
+  const wasHidden=children.hidden;
+  children.hidden=!wasHidden;
+  btn.classList.toggle('expanded',wasHidden);
+}
+
+document.addEventListener('change',function(e){
+  const cb=e.target;
+  if(!cb||cb.type!=='checkbox') return;
+
+  if(cb.dataset.dir){
+    // Parent directory toggled — sync all children
+    const children=[...document.querySelectorAll('[data-parent="'+cb.dataset.dir+'"]')];
+    children.forEach(c=>{c.checked=cb.checked;c.indeterminate=false;});
+  } else if(cb.dataset.parent){
+    // Child toggled — update parent state
+    const parentCb=document.querySelector('[data-dir="'+cb.dataset.parent+'"]');
+    if(parentCb){
+      const siblings=[...document.querySelectorAll('[data-parent="'+cb.dataset.parent+'"]')];
+      const checkedCount=siblings.filter(s=>s.checked).length;
+      const allChecked=checkedCount===siblings.length;
+      const someChecked=checkedCount>0;
+      parentCb.indeterminate=someChecked&&!allChecked;
+      parentCb.checked=allChecked;
+    }
+  }
+
+  updateCounts();
+});
 
 async function submitSel(){
   const sel={agents:[],skills:[],mcps:[]};
