@@ -77,7 +77,7 @@ export function writeSkillsToRepo(repoDir: string, allowedNames?: ReadonlySet<st
 
   return mirrorDirectory(source, dest, {
     includeDirectory: (relPath) => !shouldSkip(path.basename(relPath)) && isAllowedTopLevel(relPath, allowedNames),
-    includeFile: (relPath) => !shouldSkip(path.basename(relPath)) && isAllowedTopLevel(relPath, allowedNames),
+    includeFile: (relPath) => relPath.endsWith('.md') && !shouldSkip(path.basename(relPath)) && isAllowedTopLevel(relPath, allowedNames),
   });
 }
 
@@ -93,7 +93,7 @@ export function applySkillsFromRepo(repoDir: string, allowedNames?: ReadonlySet<
 
   return mirrorDirectory(source, dest, {
     includeDirectory: (relPath) => !shouldSkip(path.basename(relPath)) && isAllowedTopLevel(relPath, allowedNames),
-    includeFile: (relPath) => !shouldSkip(path.basename(relPath)) && isAllowedTopLevel(relPath, allowedNames),
+    includeFile: (relPath) => relPath.endsWith('.md') && !shouldSkip(path.basename(relPath)) && isAllowedTopLevel(relPath, allowedNames),
   });
 }
 
