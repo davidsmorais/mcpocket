@@ -113,6 +113,19 @@ function esc(str: string): string {
 
 // ── HTML ──────────────────────────────────────────────────────────────────────
 
+function renderBreadcrumb(name: string): string {
+  const parts = name.split(/[/\\]/);
+  if (parts.length === 1) {
+    return `<span class="path-name">${esc(name)}</span>`;
+  }
+  const dirParts = parts.slice(0, -1);
+  const fileName = parts[parts.length - 1];
+  const breadcrumbs = dirParts
+    .map((part) => `<span class="path-breadcrumb">${esc(part)}</span>`)
+    .join(`<span class="path-sep">›</span>`);
+  return `${breadcrumbs}<span class="path-sep">›</span><span class="path-name">${esc(fileName)}</span>`;
+}
+
 function renderGroup(
   kind: string,
   title: string,
@@ -122,9 +135,9 @@ function renderGroup(
   const items = names
     .map(
       (n) => `
-        <label class="item">
+        <label class="item" title="${esc(n)}">
           <input type="checkbox" data-kind="${kind}" value="${esc(n)}" checked>
-          <span class="name">${esc(n)}</span>
+          <span class="name">${renderBreadcrumb(n)}</span>
         </label>`,
     )
     .join('');
@@ -194,7 +207,10 @@ main{flex:1;padding:24px 32px;max-width:760px;width:100%;margin:0 auto;display:f
 .item{display:flex;align-items:center;gap:11px;padding:7px 14px;cursor:pointer;transition:background .1s}
 .item:hover{background:rgba(255,255,255,.04)}
 .item input[type=checkbox]{width:14px;height:14px;accent-color:var(--blue);cursor:pointer;flex-shrink:0}
-.name{font-size:13px}
+.name{font-size:13px;display:flex;align-items:center;gap:2px;flex-wrap:wrap}
+.path-breadcrumb{color:var(--muted);font-size:0.9em}
+.path-sep{color:var(--muted);margin:0 1px}
+.path-name{color:var(--text);font-weight:500}
 .empty{padding:14px;font-size:12px;color:var(--muted);text-align:center;font-style:italic}
 
 /* footer */

@@ -18,8 +18,9 @@ function isIncludedDir(relPath: string): boolean {
 function isIncludedFile(relPath: string, allowedNames?: ReadonlySet<string>): boolean {
   if (!relPath.endsWith('.md')) return false;
   if (!allowedNames) return true;
-  const name = path.basename(relPath, '.md');
-  return allowedNames.has(name);
+  // Extract agent name with full relative path, removing .md extension
+  const agentName = relPath.slice(0, -3);
+  return allowedNames.has(agentName);
 }
 
 /** List agent names available in ~/.claude/agents/ */
@@ -37,20 +38,25 @@ export function listRepoAgentNames(repoDir: string): string[] {
 function listAgentNamesInDir(dir: string): string[] {
   if (!fs.existsSync(dir)) return [];
   const names: string[] = [];
-  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
-    if (entry.name.startsWith('.') || entry.name === 'node_modules') continue;
-    if (entry.isFile() && entry.name.endsWith('.md')) {
-      names.push(path.basename(entry.name, '.md'));
-    } else if (entry.isDirectory()) {
-      // Include subdirectory agent files
-      const subDir = path.join(dir, entry.name);
-      for (const sub of fs.readdirSync(subDir, { withFileTypes: true })) {
-        if (sub.isFile() && sub.name.endsWith('.md')) {
-          names.push(path.basename(sub.name, '.md'));
-        }
+
+  function scanDir(currentDir: string, relPrefix: string = ''): void {
+    for (const entry of fs.readdirSync(currentDir, { withFileTypes: true })) {
+      if (entry.name.startsWith('.') || entry.name === 'node_modules') continue;
+      const relPath = relPrefix ? path.join(relPrefix, entry.name) : entry.name;
+
+      if (entry.isFile() && entry.name.endsWith('.md')) {
+        // Add agent with relative path, removing .md extension
+        const agentName = relPath.slice(0, -3);
+        names.push(agentName);
+      } else if (entry.isDirectory()) {
+        // Recursively scan subdirectories
+        const subDir = path.join(currentDir, entry.name);
+        scanDir(subDir, relPath);
       }
     }
   }
+
+  scanDir(dir);
   return names;
 }
 

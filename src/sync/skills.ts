@@ -19,9 +19,15 @@ function shouldSkip(name: string): boolean {
 
 function isAllowedTopLevel(relPath: string, allowedNames?: ReadonlySet<string>): boolean {
   if (!allowedNames) return true;
-  // The top-level directory or file name is the skill name
-  const topLevel = relPath.split(path.sep)[0];
-  return allowedNames.has(topLevel);
+  // Check if relPath is under any of the allowed skill directories
+  // Skills can now be nested (e.g., "team/my-skill"), so we check if relPath
+  // matches or is under any allowed skill directory
+  for (const skillName of allowedNames) {
+    if (relPath === skillName || relPath.startsWith(skillName + path.sep)) {
+      return true;
+    }
+  }
+  return false;
 }
 
 /** List skill names (top-level entries) available in ~/.claude/skills/ */
@@ -39,10 +45,23 @@ export function listRepoSkillNames(repoDir: string): string[] {
 function listSkillNamesInDir(dir: string): string[] {
   if (!fs.existsSync(dir)) return [];
   const names: string[] = [];
-  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
-    if (shouldSkip(entry.name)) continue;
-    names.push(entry.name);
+
+  function scanDir(currentDir: string, relPrefix: string = ''): void {
+    for (const entry of fs.readdirSync(currentDir, { withFileTypes: true })) {
+      if (shouldSkip(entry.name)) continue;
+      const relPath = relPrefix ? path.join(relPrefix, entry.name) : entry.name;
+
+      if (entry.isDirectory()) {
+        // Add skill directory name with relative path
+        names.push(relPath);
+        // Recursively scan subdirectories
+        const subDir = path.join(currentDir, entry.name);
+        scanDir(subDir, relPath);
+      }
+    }
   }
+
+  scanDir(dir);
   return names;
 }
 
