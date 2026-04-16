@@ -7,8 +7,8 @@ import { collectFilesFromDir, updateGist } from '../storage/gist.js';
 import { mergeMcpSources, buildPortableConfig } from '../sync/mcp.js';
 import type { McpServersMap } from '../clients/types.js';
 import { readPluginManifests, writePluginManifestsToRepo } from '../sync/plugins.js';
-import { writeAgentsToRepo, listLocalAgentNames, listRepoAgentNames, pruneAgentsFromRepo } from '../sync/agents.js';
-import { writeSkillsToRepo, listLocalSkillNames, listRepoSkillNames, pruneSkillsFromRepo } from '../sync/skills.js';
+import { writeAgentsToRepo, listLocalAgentNames } from '../sync/agents.js';
+import { writeSkillsToRepo, listLocalSkillNames } from '../sync/skills.js';
 import { prunePocketDir } from '../sync/pocket.js';
 import { formatProviderList, resolveProviderSelection } from './provider-options.js';
 import type { ProviderFlagOptions } from './provider-options.js';
@@ -62,16 +62,12 @@ export async function pushCommand(
     allMcps = mergeMcpSources(...selection.selected.map((p) => p.readMcpServers()));
   }
 
-  // Discover available agents/skills from BOTH local Claude home AND the pocket.
-  // This ensures all items appear in --interactive/--ui even if they only exist in one source.
-  const localAgentNames = activeCategories.has('agents') ? listLocalAgentNames() : [];
-  const pocketAgentNames = activeCategories.has('agents') ? listRepoAgentNames(repoDir) : [];
-  const localSkillNames = activeCategories.has('skills') ? listLocalSkillNames() : [];
-  const pocketSkillNames = activeCategories.has('skills') ? listRepoSkillNames(repoDir) : [];
-
-  // Deduplicate union of local + pocket names
-  const allAgentNames = [...new Set([...localAgentNames, ...pocketAgentNames])];
-  const allSkillNames = [...new Set([...localSkillNames, ...pocketSkillNames])];
+  const allAgentNames = activeCategories.has('agents') && selection.syncsClaudeHomeAssets
+    ? listLocalAgentNames()
+    : [];
+  const allSkillNames = activeCategories.has('skills') && selection.syncsClaudeHomeAssets
+    ? listLocalSkillNames()
+    : [];
   const allMcpNames = Object.keys(allMcps);
   const allPluginPaths = activeCategories.has('plugins') ? Object.keys(readPluginManifests()) : [];
 
@@ -255,11 +251,6 @@ function syncClaudeHomeAssetsToPocket(
     if (agentResult.removed > 0) {
       sparkle(`Removed ${agentResult.removed} stale agent file(s) from the pocket`);
     }
-  } else if (filters.agentNames && filters.agentNames.size > 0) {
-    agentResult = pruneAgentsFromRepo(repoDir, filters.agentNames);
-    if (agentResult.removed > 0) {
-      sparkle(`Removed ${agentResult.removed} deselected agent file(s) from the pocket`);
-    }
   } else if (showSkipMessage) {
     sparkle('Skipping agents (not in sync scope)');
   }
@@ -270,11 +261,6 @@ function syncClaudeHomeAssetsToPocket(
     sparkle(`Synced ${skillResult.synced} skill file(s)`);
     if (skillResult.removed > 0) {
       sparkle(`Removed ${skillResult.removed} stale skill file(s) from the pocket`);
-    }
-  } else if (filters.skillNames && filters.skillNames.size > 0) {
-    skillResult = pruneSkillsFromRepo(repoDir, filters.skillNames);
-    if (skillResult.removed > 0) {
-      sparkle(`Removed ${skillResult.removed} deselected skill file(s) from the pocket`);
     }
   } else if (showSkipMessage) {
     sparkle('Skipping skills (not in sync scope)');

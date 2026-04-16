@@ -107,6 +107,13 @@ function removeManagedDir(dir: string): number {
   return removed;
 }
 
+export function clearSkillsFromRepo(repoDir: string): SyncResult {
+  const dir = path.join(repoDir, SKILLS_DIR);
+  if (!fs.existsSync(dir)) return { synced: 0, removed: 0 };
+  const removed = removeManagedDir(dir);
+  return { synced: 0, removed };
+}
+
 export function pruneSkillsFromRepo(repoDir: string, keepNames: ReadonlySet<string>): SyncResult {
   const dir = path.join(repoDir, SKILLS_DIR);
   if (!fs.existsSync(dir)) return { synced: 0, removed: 0 };

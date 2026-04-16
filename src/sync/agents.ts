@@ -102,30 +102,10 @@ function removeManagedDir(dir: string): number {
   return removed;
 }
 
-export function pruneAgentsFromRepo(repoDir: string, keepNames: ReadonlySet<string>): SyncResult {
+export function clearAgentsFromRepo(repoDir: string): SyncResult {
   const dir = path.join(repoDir, AGENTS_DIR);
   if (!fs.existsSync(dir)) return { synced: 0, removed: 0 };
-
-  let removed = 0;
-  function scanAndRemove(currentDir: string, relPrefix: string = ''): void {
-    for (const entry of fs.readdirSync(currentDir, { withFileTypes: true })) {
-      if (entry.name.startsWith('.') || entry.name === 'node_modules') continue;
-      const relPath = relPrefix ? path.join(relPrefix, entry.name) : entry.name;
-
-      if (entry.isFile() && entry.name.endsWith('.md')) {
-        const agentName = relPath.slice(0, -3);
-        if (!keepNames.has(agentName)) {
-          fs.unlinkSync(path.join(currentDir, entry.name));
-          removed++;
-        }
-      } else if (entry.isDirectory()) {
-        scanAndRemove(path.join(currentDir, entry.name), relPath);
-      }
-    }
-  }
-
-  scanAndRemove(dir);
-  pruneEmptyDirs(dir);
+  const removed = removeManagedDir(dir);
   return { synced: 0, removed };
 }
 
@@ -143,15 +123,4 @@ function countManagedFiles(dir: string): number {
     }
   }
   return count;
-}
-
-function pruneEmptyDirs(dir: string): void {
-  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
-    if (!entry.isDirectory() || entry.name.startsWith('.') || entry.name === 'node_modules') continue;
-    const fullPath = path.join(dir, entry.name);
-    pruneEmptyDirs(fullPath);
-    if (fs.readdirSync(fullPath).length === 0) {
-      fs.rmdirSync(fullPath);
-    }
-  }
 }
