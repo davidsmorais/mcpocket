@@ -107,6 +107,32 @@ function removeManagedDir(dir: string): number {
   return removed;
 }
 
+export function pruneSkillsFromRepo(repoDir: string, keepNames: ReadonlySet<string>): SyncResult {
+  const dir = path.join(repoDir, SKILLS_DIR);
+  if (!fs.existsSync(dir)) return { synced: 0, removed: 0 };
+
+  let removed = 0;
+  function scanAndRemove(currentDir: string, relPrefix: string = ''): void {
+    for (const entry of fs.readdirSync(currentDir, { withFileTypes: true })) {
+      if (shouldSkip(entry.name)) continue;
+      const relPath = relPrefix ? path.join(relPrefix, entry.name) : entry.name;
+
+      if (entry.isFile()) {
+        if (!keepNames.has(relPath)) {
+          fs.unlinkSync(path.join(currentDir, entry.name));
+          removed++;
+        }
+      } else if (entry.isDirectory()) {
+        scanAndRemove(path.join(currentDir, entry.name), relPath);
+      }
+    }
+  }
+
+  scanAndRemove(dir);
+  pruneEmptyDirs(dir);
+  return { synced: 0, removed };
+}
+
 function countManagedFiles(dir: string): number {
   let count = 0;
   for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
@@ -121,4 +147,15 @@ function countManagedFiles(dir: string): number {
     }
   }
   return count;
+}
+
+function pruneEmptyDirs(dir: string): void {
+  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+    if (!entry.isDirectory() || shouldSkip(entry.name)) continue;
+    const fullPath = path.join(dir, entry.name);
+    pruneEmptyDirs(fullPath);
+    if (fs.readdirSync(fullPath).length === 0) {
+      fs.rmdirSync(fullPath);
+    }
+  }
 }

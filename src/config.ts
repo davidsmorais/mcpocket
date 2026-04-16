@@ -28,6 +28,8 @@ export interface McpocketConfig {
   // Cleanup filters (used by `mcpocket cleanup --local`)
   cleanupInclude?: string[];
   cleanupExclude?: string[];
+  // Project mode
+  projects?: Record<string, string[]>;
 }
 
 export function configExists(): boolean {

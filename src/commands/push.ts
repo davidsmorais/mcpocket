@@ -1,20 +1,21 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { readConfig, getLocalRepoDir, resolveToken } from '../config.js';
+import { readConfig, getLocalRepoDir, resolveToken, writeConfig } from '../config.js';
 import type { SyncCategory } from '../config.js';
 import { pullRepo, commitAndPush, ensureGitConfig } from '../storage/github.js';
 import { collectFilesFromDir, updateGist } from '../storage/gist.js';
 import { mergeMcpSources, buildPortableConfig } from '../sync/mcp.js';
 import type { McpServersMap } from '../clients/types.js';
 import { readPluginManifests, writePluginManifestsToRepo } from '../sync/plugins.js';
-import { writeAgentsToRepo, listLocalAgentNames } from '../sync/agents.js';
-import { writeSkillsToRepo, listLocalSkillNames } from '../sync/skills.js';
+import { writeAgentsToRepo, listLocalAgentNames, listRepoAgentNames, pruneAgentsFromRepo } from '../sync/agents.js';
+import { writeSkillsToRepo, listLocalSkillNames, listRepoSkillNames, pruneSkillsFromRepo } from '../sync/skills.js';
 import { prunePocketDir } from '../sync/pocket.js';
 import { formatProviderList, resolveProviderSelection } from './provider-options.js';
 import type { ProviderFlagOptions } from './provider-options.js';
 import { promptForItemSelection, type ItemFilters } from './item-select.js';
 import { openSelectionUi } from './ui-server.js';
-import { askSecret } from '../utils/prompt.js';
+import { askSecret, ask } from '../utils/prompt.js';
+import { readProjectConfig, copyProjectFilesToPocket } from '../sync/project.js';
 import { sparkle, celebrate, section, stat, oops, heads_up, WITTY, c } from '../utils/sparkle.js';
 
 interface AssetSyncSummary {
@@ -25,10 +26,16 @@ interface AssetSyncSummary {
 }
 
 export async function pushCommand(
-  options: ProviderFlagOptions & { interactive?: boolean; ui?: boolean } = {},
+  options: ProviderFlagOptions & { interactive?: boolean; ui?: boolean; project?: boolean } = {},
 ): Promise<void> {
   const config = readConfig();
   const repoDir = getLocalRepoDir();
+
+  if (options.project) {
+    await pushProjectCommand(config, repoDir);
+    return;
+  }
+
   const selection = resolveProviderSelection(options, config.syncProviders);
   const activeCategories: Set<SyncCategory> = config.syncCategories
     ? new Set(config.syncCategories)
@@ -55,12 +62,16 @@ export async function pushCommand(
     allMcps = mergeMcpSources(...selection.selected.map((p) => p.readMcpServers()));
   }
 
-  const allAgentNames = activeCategories.has('agents') && selection.syncsClaudeHomeAssets
-    ? listLocalAgentNames()
-    : [];
-  const allSkillNames = activeCategories.has('skills') && selection.syncsClaudeHomeAssets
-    ? listLocalSkillNames()
-    : [];
+  // Discover available agents/skills from BOTH local Claude home AND the pocket.
+  // This ensures all items appear in --interactive/--ui even if they only exist in one source.
+  const localAgentNames = activeCategories.has('agents') ? listLocalAgentNames() : [];
+  const pocketAgentNames = activeCategories.has('agents') ? listRepoAgentNames(repoDir) : [];
+  const localSkillNames = activeCategories.has('skills') ? listLocalSkillNames() : [];
+  const pocketSkillNames = activeCategories.has('skills') ? listRepoSkillNames(repoDir) : [];
+
+  // Deduplicate union of local + pocket names
+  const allAgentNames = [...new Set([...localAgentNames, ...pocketAgentNames])];
+  const allSkillNames = [...new Set([...localSkillNames, ...pocketSkillNames])];
   const allMcpNames = Object.keys(allMcps);
   const allPluginPaths = activeCategories.has('plugins') ? Object.keys(readPluginManifests()) : [];
 
@@ -244,6 +255,11 @@ function syncClaudeHomeAssetsToPocket(
     if (agentResult.removed > 0) {
       sparkle(`Removed ${agentResult.removed} stale agent file(s) from the pocket`);
     }
+  } else if (filters.agentNames && filters.agentNames.size > 0) {
+    agentResult = pruneAgentsFromRepo(repoDir, filters.agentNames);
+    if (agentResult.removed > 0) {
+      sparkle(`Removed ${agentResult.removed} deselected agent file(s) from the pocket`);
+    }
   } else if (showSkipMessage) {
     sparkle('Skipping agents (not in sync scope)');
   }
@@ -254,6 +270,11 @@ function syncClaudeHomeAssetsToPocket(
     sparkle(`Synced ${skillResult.synced} skill file(s)`);
     if (skillResult.removed > 0) {
       sparkle(`Removed ${skillResult.removed} stale skill file(s) from the pocket`);
+    }
+  } else if (filters.skillNames && filters.skillNames.size > 0) {
+    skillResult = pruneSkillsFromRepo(repoDir, filters.skillNames);
+    if (skillResult.removed > 0) {
+      sparkle(`Removed ${skillResult.removed} deselected skill file(s) from the pocket`);
     }
   } else if (showSkipMessage) {
     sparkle('Skipping skills (not in sync scope)');
@@ -268,4 +289,79 @@ function filterMap<V>(map: Record<string, V>, allowedKeys: ReadonlySet<string>):
     if (allowedKeys.has(key)) result[key] = val;
   }
   return result;
+}
+
+async function pushProjectCommand(
+  config: ReturnType<typeof readConfig>,
+  repoDir: string,
+): Promise<void> {
+  section('Push Project');
+
+  let projectConfig;
+  try {
+    projectConfig = readProjectConfig();
+  } catch (err) {
+    oops((err as Error).message);
+    process.exit(1);
+  }
+
+  const defaultName = projectConfig.projectName;
+  const answer = await ask(`  Project name [${defaultName}]: `);
+  const projectName = answer.trim() || defaultName;
+
+  if (projectConfig.files.length === 0) {
+    oops('No files configured to push. Edit mcpocket.json to add files.');
+    process.exit(1);
+  }
+
+  preparePocketDirectory(config.storageType, repoDir, resolveToken(config), config.repoCloneUrl);
+
+  sparkle(`Pushing project "${projectName}" files...`);
+  const pocketPaths = copyProjectFilesToPocket(projectName, projectConfig.files, repoDir);
+
+  if (pocketPaths.length === 0) {
+    oops('No files were copied. Check that configured files exist in the current directory.');
+    process.exit(1);
+  }
+
+  // Update global config projects map
+  const updatedConfig = {
+    ...config,
+    projects: {
+      ...(config.projects || {}),
+      [projectName]: pocketPaths,
+    },
+  };
+  writeConfig(updatedConfig);
+
+  sparkle(WITTY.pushing);
+
+  if (config.storageType === 'gist') {
+    try {
+      const files = collectFilesFromDir(repoDir);
+      await updateGist(resolveToken(config), config.gistId!, files);
+      celebrate(WITTY.pushDone);
+      heads_up(`Pocket URL: ${c.cyan(config.gistUrl!)}  ← save this to connect from another machine!`);
+    } catch (err) {
+      oops(`Gist push failed: ${(err as Error).message}`);
+      process.exit(1);
+    }
+  } else {
+    ensureGitConfig(repoDir);
+    try {
+      commitAndPush(repoDir, resolveToken(config), config.repoCloneUrl!, `mcpocket: push project ${projectName}`);
+      celebrate(WITTY.pushDone);
+    } catch (err) {
+      oops(`Push failed: ${(err as Error).message}`);
+      process.exit(1);
+    }
+  }
+
+  section('Summary');
+  stat('Project', projectName);
+  stat('Files pushed', pocketPaths.length.toString());
+  for (const p of pocketPaths) {
+    sparkle(c.dim(p));
+  }
+  console.log('');
 }

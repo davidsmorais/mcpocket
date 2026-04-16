@@ -14,7 +14,8 @@ import { formatProviderList, resolveProviderSelection } from './provider-options
 import type { ProviderFlagOptions } from './provider-options.js';
 import { promptForItemSelection, type ItemFilters } from './item-select.js';
 import { openSelectionUi } from './ui-server.js';
-import { askSecret } from '../utils/prompt.js';
+import { askSecret, askSingleSelect } from '../utils/prompt.js';
+import { copyProjectFilesFromPocket } from '../sync/project.js';
 import { sparkle, celebrate, section, stat, oops, heads_up, WITTY, c } from '../utils/sparkle.js';
 
 interface RestoredAssetSummary {
@@ -24,10 +25,16 @@ interface RestoredAssetSummary {
 }
 
 export async function pullCommand(
-  options: ProviderFlagOptions & { interactive?: boolean; ui?: boolean } = {},
+  options: ProviderFlagOptions & { interactive?: boolean; ui?: boolean; project?: boolean } = {},
 ): Promise<void> {
   const config = readConfig();
   const repoDir = getLocalRepoDir();
+
+  if (options.project) {
+    await pullProjectCommand(config, repoDir);
+    return;
+  }
+
   const selection = resolveProviderSelection(options, config.syncProviders);
   const activeCategories: Set<SyncCategory> = config.syncCategories
     ? new Set(config.syncCategories)
@@ -272,4 +279,48 @@ function filterMap<V>(
     if (allowedKeys.has(key)) result[key] = val;
   }
   return result;
+}
+
+async function pullProjectCommand(
+  config: ReturnType<typeof readConfig>,
+  repoDir: string,
+): Promise<void> {
+  section('Pull Project');
+
+  const projects = config.projects;
+  if (!projects || Object.keys(projects).length === 0) {
+    heads_up('No projects found in your pocket. Push a project first with `mcpocket push --project`.');
+    return;
+  }
+
+  sparkle(WITTY.pulling);
+  await syncPocketToLocal(repoDir, config);
+
+  const projectNames = Object.keys(projects);
+  let projectName: string;
+
+  if (projectNames.length === 1) {
+    projectName = projectNames[0];
+    sparkle(`Pulling project "${projectName}"...`);
+  } else {
+    projectName = await askSingleSelect(
+      'Which project would you like to pull?',
+      projectNames.map((name) => ({ label: name, value: name })),
+    );
+  }
+
+  const files = projects[projectName];
+  if (!files || files.length === 0) {
+    heads_up(`No files registered for project "${projectName}".`);
+    return;
+  }
+
+  sparkle(`Restoring ${files.length} file(s) for project "${projectName}"...`);
+  const count = copyProjectFilesFromPocket(projectName, files, repoDir);
+
+  celebrate(WITTY.pullDone);
+  section('Summary');
+  stat('Project', projectName);
+  stat('Files restored', count.toString());
+  console.log('');
 }

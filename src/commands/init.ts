@@ -1,3 +1,4 @@
+import * as path from 'node:path';
 import { createRepo, resolveRepoInfo, cloneRepo, ensureGitConfig } from '../storage/github.js';
 import { createGist, resolveGistInfo } from '../storage/gist.js';
 import { getGhToken, getGhUsername, listGhRepos, listGhGists } from '../storage/gh-cli.js';
@@ -13,9 +14,14 @@ import { readPluginManifests } from '../sync/plugins.js';
 
 export interface InitOptions {
   ui?: boolean;
+  project?: boolean;
 }
 
 export async function initCommand(options: InitOptions = {}): Promise<void> {
+  if (options.project) {
+    return initProjectCommand();
+  }
+
   section('Init');
 
   if (configExists()) {
@@ -277,4 +283,43 @@ async function askSyncScope(useUI?: boolean): Promise<AskSyncScopeResult> {
   }
 
   return { syncCategories, syncProviders, syncAgents, syncSkills, syncPlugins };
+}
+
+async function initProjectCommand(): Promise<void> {
+  section('Init Project');
+
+  const { projectConfigExists, writeProjectConfig, discoverProjectFiles } =
+    await import('../sync/project.js');
+
+  if (projectConfigExists()) {
+    const answer = await ask('  Project config already exists. Re-initialize? [y/N] ');
+    if (answer.toLowerCase() !== 'y') {
+      sparkle('No worries, keeping project config as-is.');
+      return;
+    }
+  }
+
+  const defaultName = path.basename(process.cwd());
+  const nameAnswer = await ask(`  Project name [${defaultName}]: `);
+  const projectName = nameAnswer.trim() || defaultName;
+
+  const discovered = discoverProjectFiles();
+
+  let selectedFiles: string[] = [];
+
+  if (discovered.length === 0) {
+    sparkle('No well-known AI config files found in this directory.');
+    sparkle('Add files like CLAUDE.md or .cursorrules and re-run `mcpocket init --project`.');
+  } else {
+    selectedFiles = await askMultiSelect<string>(
+      'Which files should be tracked?',
+      discovered.map((f) => ({ label: f, value: f })),
+    );
+  }
+
+  writeProjectConfig({ projectName, files: selectedFiles });
+
+  celebrate(`Project "${projectName}" initialized! ${selectedFiles.length} file(s) tracked.`);
+  sparkle(c.cyan('mcpocket push --project') + '   — push project files to your pocket');
+  sparkle(c.cyan('mcpocket pull --project') + '   — pull project files on another machine');
 }

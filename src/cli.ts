@@ -23,6 +23,7 @@ program
   .command('init')
   .description('Set up mcpocket: connect GitHub, create your sync pocket')
   .option('--ui', 'Open a browser UI on port 3000 to select individual agents, skills, and plugins')
+  .option('--project', 'Initialize mcpocket for this project directory (creates mcpocket.json)')
   .action((options) => initCommand(options).catch(die));
 
 program
@@ -30,6 +31,7 @@ program
   .description('Tuck your AI setup into the cloud pocket')
   .option('-i, --interactive', 'Pick specific items to sync (keyboard UI)')
   .option('--ui', 'Open a browser UI on port 3000 to select items to sync')
+  .option('--project', 'Push project-level files from this directory to your pocket')
 
 for (const provider of PROVIDER_OPTION_FLAGS) {
   program.commands.find((command) => command.name() === 'push')?.option(provider.flag, provider.description);
@@ -45,6 +47,7 @@ program
   .description('Unpack your AI setup from the cloud pocket')
   .option('-i, --interactive', 'Pick specific items to sync (keyboard UI)')
   .option('--ui', 'Open a browser UI on port 3000 to select items to sync')
+  .option('--project', 'Pull project-level files from your pocket to this directory')
 
 for (const provider of PROVIDER_OPTION_FLAGS) {
   program.commands.find((command) => command.name() === 'pull')?.option(provider.flag, provider.description);
