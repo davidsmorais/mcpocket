@@ -35,6 +35,7 @@ mcpocket acts as a centralized sync hub for your AI setup. Push your configurati
 - **Multi-client sync** — Claude Desktop, Claude Code, OpenCode, Copilot CLI, Cursor, Codex, and Antigravity configs in one shot
 - **Two storage backends** — private GitHub repo (full git history) or lightweight GitHub Gist
 - **Provider-scoped sync** — target one or more providers with flags like `--copilot-cli` or `--opencode`
+- **Project mode** — sync project-level AI config files (CLAUDE.md, .cursorrules, etc.) per-project with `--project`
 - **End-to-end encryption** — secrets in MCP `env`, `headers`, and `http_headers` are encrypted with AES-256-GCM using a passphrase you choose
 - **Cross-platform paths** — Windows ↔ Linux ↔ macOS paths round-trip seamlessly
 - **Additive pull** — pulling merges remote servers into your local config without overwriting anything
@@ -80,6 +81,21 @@ mcpocket de-dupe
 
 # 7. Check sync status
 mcpocket status
+```
+
+### Project mode (per-project AI config files)
+
+```bash
+# Inside a project directory:
+
+# 1. Initialize project tracking (creates mcpocket.json)
+mcpocket init --project
+
+# 2. Push project files (CLAUDE.md, .cursorrules, etc.) to your pocket
+mcpocket push --project
+
+# 3. Pull a project's files from your pocket into the current directory
+mcpocket pull --project
 ```
 
 ---
