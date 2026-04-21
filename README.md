@@ -177,7 +177,7 @@ With provider flags, pull only writes MCP servers to those selected providers. C
 | Claude Desktop | `claude_desktop_config.json` |
 | Claude Code | `~/.claude/settings.json` |
 | OpenCode | `~/.config/opencode/config.json` |
-| Copilot CLI | VS Code/Copilot user `mcp.json` |
+| Copilot CLI | VS Code/Copilot user `mcp.json` (push also reads `~/.copilot/mcp-config.json`) |
 | Cursor | `~/.cursor/mcp.json` |
 | Codex | `~/.codex/config.toml` |
 | Antigravity | `~/.gemini/antigravity/mcp_config.json` |
@@ -270,10 +270,14 @@ mcpocket status
 |---|---|---|
 | MCP server configs | Claude Desktop, Claude Code, OpenCode, Copilot CLI, Cursor, Codex, Antigravity | Merged across all selected providers |
 | Plugin manifests | `~/.claude/plugins/` | `installed_plugins.json`, `blocklist.json`, `known_marketplaces.json` |
-| Agents | `~/.claude/agents/` | All `*.md` files, recursively |
-| Skills | `~/.claude/skills/` | All files, recursively (excluding `node_modules`) |
+| Agents | `~/.claude/agents/` and `~/.copilot/agents/` | All `*.md` files, recursively; merged from both sources — Claude wins on conflict |
+| Skills | `~/.claude/skills/` and `~/.gemini/extensions/agency-agents/skills/` | All files, recursively (excluding `node_modules`); merged from both sources — Claude wins on conflict |
 
 If you do not pass provider flags, `push` and `pull` operate on every supported provider. If you do pass flags, only those providers participate in the command.
+
+### Multi-source agents and skills
+
+On push, agents are collected from both `~/.claude/agents/` and `~/.copilot/agents/`, and skills from both `~/.claude/skills/` and `~/.gemini/extensions/agency-agents/skills/`. Files from both sources are merged into a single pocket. When the same filename exists in both source directories, the Claude home directory (`~/.claude/`) takes precedence. On pull, agents and skills are always restored only to `~/.claude/agents/` and `~/.claude/skills/`, respectively — the other source directories are never written to.
 
 ### Never Synced
 

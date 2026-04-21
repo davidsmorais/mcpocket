@@ -2,6 +2,26 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.6.0] - 2026-04-21
+
+### Added
+- Agents are now collected from `~/.copilot/agents/` in addition to `~/.claude/agents/` on push. Files from both sources are merged; Claude wins on conflict.
+- Skills are now collected from `~/.gemini/extensions/agency-agents/skills/` in addition to `~/.claude/skills/` on push. Files from both sources are merged; Claude wins on conflict.
+- Copilot CLI MCP config now also reads from `~/.copilot/mcp-config.json` on push (VS Code config takes precedence on conflict).
+- New path helpers for Copilot and Gemini home directories and agent/skill locations.
+
+## [0.5.0] - 2026-04-15
+
+### Added
+- Project mode: track and sync project-level AI config files (CLAUDE.md, .cursorrules, etc.) with `mcpocket init --project`, `push --project`, and `pull --project`.
+- When preparing a pocket for gist storage, managed agents and skills are removed and the plugins folder is pruned to avoid leaving stale files.
+
+## [0.4.0] - 2026-04-12
+
+### Added
+- `mcpocket cleanup` command: interactively remove files from your pocket or use pattern-based rules via `cleanupInclude`/`cleanupExclude` in config.
+- `mcpocket status` command: diff local vs remote MCP servers.
+
 ## [0.3.0] - 2026-04-10
 
 ### Added
