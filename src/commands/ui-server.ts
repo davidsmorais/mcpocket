@@ -10,6 +10,7 @@ export interface UiItems {
   skills: string[];
   mcps:   string[];
   plugins?: string[];
+  aiProviders?: string[];
 }
 
 /**
@@ -78,7 +79,7 @@ export async function openSelectionUi(
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 function buildFilters(
-  sel: { agents: string[]; skills: string[]; mcps: string[]; plugins?: string[] },
+  sel: { agents: string[]; skills: string[]; mcps: string[]; plugins?: string[]; aiProviders?: string[] },
   available: UiItems,
 ): ItemFilters {
   const filters: ItemFilters = {};
@@ -87,6 +88,9 @@ function buildFilters(
   if (sel.mcps.length   < available.mcps.length)   filters.mcpNames   = new Set(sel.mcps);
   if (available.plugins && sel.plugins && sel.plugins.length < available.plugins.length) {
     filters.pluginNames = new Set(sel.plugins);
+  }
+  if (available.aiProviders && sel.aiProviders && sel.aiProviders.length < available.aiProviders.length) {
+    filters.aiProviderNames = new Set(sel.aiProviders);
   }
   return filters;
 }
@@ -238,9 +242,10 @@ function buildHtml(items: UiItems, action: 'push' | 'pull'): string {
   const itemsJson   = JSON.stringify(items);
 
   const groups = [
+    ...(items.aiProviders && items.aiProviders.length > 0 ? [renderGroup('aiProviders', 'AI Providers', 'var(--orange)', items.aiProviders)] : []),
     renderGroup('agents',  'Agents',       'var(--blue)',    items.agents),
     renderGroup('skills',  'Skills',       'var(--purple)',  items.skills),
-    renderGroup('mcps',    'AI Providers', 'var(--green)',   items.mcps),
+    renderGroup('mcps',    'MCP Servers',  'var(--green)',   items.mcps),
     ...(items.plugins && items.plugins.length > 0 ? [renderGroup('plugins', 'Plugins', 'var(--yellow)', items.plugins)] : []),
   ].join('');
 
@@ -255,7 +260,7 @@ function buildHtml(items: UiItems, action: 'push' | 'pull'): string {
 :root{
   --bg:#0d1117;--surface:#161b22;--border:#30363d;
   --text:#e6edf3;--muted:#8b949e;
-  --blue:#58a6ff;--green:#3fb950;--purple:#bc8cff;--yellow:#d29922;
+  --blue:#58a6ff;--green:#3fb950;--purple:#bc8cff;--yellow:#d29922;--orange:#fb8500;
   --font:'SF Mono','Fira Code','Cascadia Code',ui-monospace,monospace;
 }
 body{font-family:var(--font);background:var(--bg);color:var(--text);min-height:100vh;display:flex;flex-direction:column}
@@ -349,7 +354,8 @@ function countFor(kind){
 }
 function updateCounts(){
   let total=0,sel=0;
-  const kinds=['agents','skills','mcps'];
+  const kinds=['aiProviders','agents','skills','mcps'];
+  if(!ITEMS.aiProviders) kinds.shift();
   if(ITEMS.plugins) kinds.push('plugins');
   kinds.forEach(k=>{
     const all=ITEMS[k]?.length || 0, s=countFor(k);
@@ -403,6 +409,10 @@ document.addEventListener('change',function(e){
 async function submitSel(){
   const sel={agents:[],skills:[],mcps:[]};
   const kinds=['agents','skills','mcps'];
+  if(ITEMS.aiProviders) {
+    sel.aiProviders=[];
+    kinds.unshift('aiProviders');
+  }
   if(ITEMS.plugins) {
     sel.plugins=[];
     kinds.push('plugins');

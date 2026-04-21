@@ -13,6 +13,7 @@ export interface SyncItem {
  * `undefined` means "all items in that category" (no filtering applied).
  */
 export interface ItemFilters {
+  aiProviderNames?: ReadonlySet<string>;
   mcpNames?: ReadonlySet<string>;
   agentNames?: ReadonlySet<string>;
   skillNames?: ReadonlySet<string>;

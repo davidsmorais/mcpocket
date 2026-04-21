@@ -62,8 +62,9 @@ export async function pullCommand(
   let filters: ItemFilters = {};
 
   if (options.ui) {
+    const aiProviders = selection.selected.map((p) => p.displayName);
     filters = await openSelectionUi(
-      { agents: allAgentNames, skills: allSkillNames, mcps: allMcpNames },
+      { agents: allAgentNames, skills: allSkillNames, mcps: allMcpNames, aiProviders },
       'pull',
     );
   } else if (options.interactive) {

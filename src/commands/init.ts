@@ -256,6 +256,7 @@ async function askSyncScope(useUI?: boolean): Promise<AskSyncScopeResult> {
     const agentNames = syncCategories.includes('agents') ? listLocalAgentNames() : [];
     const skillNames = syncCategories.includes('skills') ? listLocalSkillNames() : [];
     const mcpNames = syncCategories.includes('mcps') ? syncProviders : [];
+    const aiProviders = syncProviders.map((id) => ALL_PROVIDERS.find((p) => p.id === id)?.displayName || id);
 
     const manifests = syncCategories.includes('plugins') ? readPluginManifests() : {};
     const pluginNames = Object.keys(manifests.hasOwnProperty('plugins/installed_plugins.json')
@@ -266,6 +267,7 @@ async function askSyncScope(useUI?: boolean): Promise<AskSyncScopeResult> {
       agents: agentNames,
       skills: skillNames,
       mcps: mcpNames,
+      ...(aiProviders.length > 0 && { aiProviders }),
       ...(pluginNames.length > 0 && { plugins: pluginNames }),
     };
 

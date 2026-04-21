@@ -76,8 +76,9 @@ export async function pushCommand(
   let filters: ItemFilters = {};
 
   if (options.ui) {
+    const aiProviders = selection.selected.map((p) => p.displayName);
     filters = await openSelectionUi(
-      { agents: allAgentNames, skills: allSkillNames, mcps: allMcpNames, plugins: allPluginPaths },
+      { agents: allAgentNames, skills: allSkillNames, mcps: allMcpNames, plugins: allPluginPaths, aiProviders },
       'push',
     );
   } else if (options.interactive) {
