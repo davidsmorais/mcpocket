@@ -2,6 +2,8 @@ import * as http from 'node:http';
 import * as cp from 'node:child_process';
 import type { ItemFilters } from './item-select.js';
 import { sparkle, oops, c } from '../utils/sparkle.js';
+import { findDuplicateAgents, removeAgentFromCopilot } from '../sync/agents.js';
+import { findDuplicateSkills, removeSkillFromGemini } from '../sync/skills.js';
 
 const PORT = 3000;
 
@@ -11,6 +13,8 @@ export interface UiItems {
   mcps:   string[];
   plugins?: string[];
   aiProviders?: string[];
+  agentProviders?: Record<string, string>;
+  skillProviders?: Record<string, string>;
 }
 
 /**
@@ -33,6 +37,37 @@ export async function openSelectionUi(
       if (req.method === 'GET' && req.url === '/api/items') {
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ ...items, action }));
+        return;
+      }
+
+      if (req.method === 'GET' && req.url === '/api/dedupe-preview') {
+        const dupes = [
+          ...findDuplicateAgents().map((d) => ({ ...d, kind: 'agent' as const })),
+          ...findDuplicateSkills().map((d) => ({ ...d, kind: 'skill' as const })),
+        ];
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ dupes }));
+        return;
+      }
+
+      if (req.method === 'POST' && req.url === '/api/dedupe') {
+        let body = '';
+        req.on('data', (chunk: Buffer) => { body += chunk.toString(); });
+        req.on('end', () => {
+          try {
+            const { dupes }: { dupes: Array<{ name: string; kind: 'agent' | 'skill' }> } = JSON.parse(body);
+            let removed = 0;
+            for (const d of dupes) {
+              if (d.kind === 'agent' && removeAgentFromCopilot(d.name)) removed++;
+              if (d.kind === 'skill' && removeSkillFromGemini(d.name)) removed++;
+            }
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ ok: true, removed }));
+          } catch {
+            res.writeHead(400, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: 'Invalid JSON' }));
+          }
+        });
         return;
       }
 
@@ -130,14 +165,19 @@ function renderBreadcrumb(name: string): string {
   return `${breadcrumbs}<span class="path-sep">›</span><span class="path-name">${esc(fileName)}</span>`;
 }
 
+function renderProviderBadge(provider: string | undefined): string {
+  if (!provider) return '';
+  return `<span class="provider-badge provider-${esc(provider)}">${esc(provider)}</span>`;
+}
+
 /** Render a flat list of items as checkboxes. */
-function renderFlatItems(kind: string, names: string[]): string {
+function renderFlatItems(kind: string, names: string[], providers?: Record<string, string>): string {
   return names
     .map(
       (n) => `
         <label class="item" title="${esc(n)}">
           <input type="checkbox" data-kind="${kind}" value="${esc(n)}" checked>
-          <span class="name">${renderBreadcrumb(n)}</span>
+          <span class="name">${renderBreadcrumb(n)}${renderProviderBadge(providers?.[n])}</span>
         </label>`,
     )
     .join('');
@@ -147,7 +187,7 @@ function renderFlatItems(kind: string, names: string[]): string {
  * Render items that may have nested directory paths.
  * Top-level items that have children become collapsible sections.
  */
-function renderCollapsibleItems(kind: string, names: string[]): string {
+function renderCollapsibleItems(kind: string, names: string[], providers?: Record<string, string>): string {
   // Partition into roots (no separator) and children (have separator)
   const rootSet = new Set(names.filter((n) => !n.includes('/') && !n.includes('\\')));
 
@@ -166,12 +206,13 @@ function renderCollapsibleItems(kind: string, names: string[]): string {
 
   let html = '';
   for (const [rootName, children] of childrenMap) {
+    const rootProvider = providers?.[rootName];
     if (children.length === 0) {
       // Simple standalone item
       html += `
         <label class="item" title="${esc(rootName)}">
           <input type="checkbox" data-kind="${kind}" value="${esc(rootName)}" checked>
-          <span class="name">${esc(rootName)}</span>
+          <span class="name">${esc(rootName)}${renderProviderBadge(rootProvider)}</span>
         </label>`;
     } else {
       // Collapsible directory
@@ -181,7 +222,7 @@ function renderCollapsibleItems(kind: string, names: string[]): string {
           (child) => `
         <label class="item child-item" title="${esc(child)}">
           <input type="checkbox" data-kind="${kind}" value="${esc(child)}" data-parent="${esc(rootName)}" checked>
-          <span class="name">${renderBreadcrumb(child)}</span>
+          <span class="name">${renderBreadcrumb(child)}${renderProviderBadge(providers?.[child])}</span>
         </label>`,
         )
         .join('');
@@ -191,7 +232,7 @@ function renderCollapsibleItems(kind: string, names: string[]): string {
           <div class="dir-row">
             <label class="item" title="${esc(rootName)}">
               <input type="checkbox" data-kind="${kind}" value="${esc(rootName)}" data-dir="${esc(rootName)}" checked>
-              <span class="name">${esc(rootName)}</span>
+              <span class="name">${esc(rootName)}${renderProviderBadge(rootProvider)}</span>
             </label>
             <button class="expand-btn" onclick="toggleDir('${safeId}')" title="Expand/collapse">
               <span class="expand-icon">▶</span><span class="child-badge">${children.length}</span>
@@ -209,6 +250,7 @@ function renderGroup(
   title: string,
   colorVar: string,
   names: string[],
+  providers?: Record<string, string>,
 ): string {
   // Use collapsible rendering if any root item has children in the list
   const rootSet = new Set(names.filter((n) => !n.includes('/') && !n.includes('\\')));
@@ -220,9 +262,9 @@ function renderGroup(
   if (names.length === 0) {
     bodyHtml = `<div class="empty">No ${title.toLowerCase()} found</div>`;
   } else if (hasCollapsible) {
-    bodyHtml = renderCollapsibleItems(kind, names);
+    bodyHtml = renderCollapsibleItems(kind, names, providers);
   } else {
-    bodyHtml = renderFlatItems(kind, names);
+    bodyHtml = renderFlatItems(kind, names, providers);
   }
 
   return `
@@ -243,8 +285,8 @@ function buildHtml(items: UiItems, action: 'push' | 'pull'): string {
 
   const groups = [
     ...(items.aiProviders && items.aiProviders.length > 0 ? [renderGroup('aiProviders', 'AI Providers', 'var(--orange)', items.aiProviders)] : []),
-    renderGroup('agents',  'Agents',       'var(--blue)',    items.agents),
-    renderGroup('skills',  'Skills',       'var(--purple)',  items.skills),
+    renderGroup('agents',  'Agents',       'var(--blue)',    items.agents,  items.agentProviders),
+    renderGroup('skills',  'Skills',       'var(--purple)',  items.skills,  items.skillProviders),
     renderGroup('mcps',    'MCP Servers',  'var(--green)',   items.mcps),
     ...(items.plugins && items.plugins.length > 0 ? [renderGroup('plugins', 'Plugins', 'var(--yellow)', items.plugins)] : []),
   ].join('');
@@ -261,6 +303,7 @@ function buildHtml(items: UiItems, action: 'push' | 'pull'): string {
   --bg:#0d1117;--surface:#161b22;--border:#30363d;
   --text:#e6edf3;--muted:#8b949e;
   --blue:#58a6ff;--green:#3fb950;--purple:#bc8cff;--yellow:#d29922;--orange:#fb8500;
+  --red:#f85149;
   --font:'SF Mono','Fira Code','Cascadia Code',ui-monospace,monospace;
 }
 body{font-family:var(--font);background:var(--bg);color:var(--text);min-height:100vh;display:flex;flex-direction:column}
@@ -295,6 +338,13 @@ main{flex:1;padding:24px 32px;max-width:760px;width:100%;margin:0 auto;display:f
 .path-name{color:var(--text);font-weight:500}
 .empty{padding:14px;font-size:12px;color:var(--muted);text-align:center;font-style:italic}
 
+/* provider badges */
+.provider-badge{font-size:10px;font-weight:600;padding:1px 6px;border-radius:3px;margin-left:8px;letter-spacing:.3px}
+.provider-claude{background:rgba(56,189,248,.14);color:#38bdf8}
+.provider-copilot{background:rgba(139,148,158,.15);color:#8b949e}
+.provider-gemini{background:rgba(167,139,250,.15);color:#a78bfa}
+.provider-opencode{background:rgba(251,133,0,.14);color:#fb8500}
+
 /* collapsible directories */
 .dir-group{border-bottom:1px solid rgba(255,255,255,.04)}
 .dir-group:last-child{border-bottom:none}
@@ -312,6 +362,9 @@ main{flex:1;padding:24px 32px;max-width:760px;width:100%;margin:0 auto;display:f
 footer{position:sticky;bottom:0;background:var(--bg);border-top:1px solid var(--border);padding:14px 32px;display:flex;align-items:center;justify-content:space-between;gap:16px}
 .summary{font-size:13px;color:var(--muted)}
 .summary b{color:var(--text)}
+.footer-actions{display:flex;align-items:center;gap:10px}
+.dedupe-btn{padding:9px 16px;background:none;color:var(--muted);border:1px solid var(--border);border-radius:6px;font-family:var(--font);font-size:13px;font-weight:600;cursor:pointer;transition:all .15s}
+.dedupe-btn:hover{color:var(--text);border-color:var(--muted)}
 .sync-btn{padding:9px 22px;background:var(--blue);color:#0d1117;border:none;border-radius:6px;font-family:var(--font);font-size:13px;font-weight:700;cursor:pointer;transition:opacity .15s}
 .sync-btn:hover{opacity:.88}
 .sync-btn:disabled{opacity:.35;cursor:default}
@@ -322,6 +375,33 @@ footer{position:sticky;bottom:0;background:var(--bg);border-top:1px solid var(--
 .done-icon{font-size:52px}
 .done-msg{font-size:20px;color:var(--green);font-weight:600}
 .done-sub{font-size:13px;color:var(--muted)}
+
+/* dedupe modal */
+.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.7);display:flex;align-items:center;justify-content:center;z-index:100}
+.modal-overlay[hidden]{display:none}
+.modal{background:var(--surface);border:1px solid var(--border);border-radius:10px;width:520px;max-width:calc(100vw - 48px);max-height:80vh;display:flex;flex-direction:column;overflow:hidden}
+.modal-head{display:flex;align-items:center;justify-content:space-between;padding:14px 18px;border-bottom:1px solid var(--border)}
+.modal-head h3{font-size:14px;font-weight:600}
+.modal-close{background:none;border:none;color:var(--muted);cursor:pointer;font-size:16px;line-height:1;padding:2px 6px;border-radius:4px}
+.modal-close:hover{color:var(--text);background:rgba(255,255,255,.08)}
+.modal-body{padding:16px 18px;overflow-y:auto;flex:1;font-size:13px}
+.modal-foot{display:flex;align-items:center;justify-content:flex-end;gap:10px;padding:12px 18px;border-top:1px solid var(--border)}
+.cancel-btn{padding:7px 16px;background:none;color:var(--text);border:1px solid var(--border);border-radius:6px;font-family:var(--font);font-size:13px;cursor:pointer}
+.cancel-btn:hover{background:rgba(255,255,255,.06)}
+.confirm-btn{padding:7px 16px;background:var(--red);color:#fff;border:none;border-radius:6px;font-family:var(--font);font-size:13px;font-weight:600;cursor:pointer;transition:opacity .15s}
+.confirm-btn:hover{opacity:.85}
+.confirm-btn:disabled{opacity:.4;cursor:default}
+.dupe-list{display:flex;flex-direction:column;gap:8px;margin-top:10px}
+.dupe-item{background:rgba(255,255,255,.04);border:1px solid var(--border);border-radius:6px;padding:10px 12px}
+.dupe-name{font-weight:600;margin-bottom:4px}
+.dupe-detail{font-size:11px;color:var(--muted);display:flex;flex-direction:column;gap:2px}
+.dupe-keep{color:var(--green)}
+.dupe-remove{color:var(--red)}
+.dupe-kind{font-size:10px;font-weight:600;padding:1px 6px;border-radius:3px;margin-left:6px;vertical-align:middle}
+.dupe-kind-agent{background:rgba(88,166,255,.14);color:var(--blue)}
+.dupe-kind-skill{background:rgba(188,140,255,.14);color:var(--purple)}
+.modal-empty{color:var(--muted);text-align:center;padding:20px 0;font-style:italic}
+.modal-success{color:var(--green);text-align:center;padding:20px 0;font-size:14px}
 </style>
 </head>
 <body>
@@ -341,13 +421,34 @@ footer{position:sticky;bottom:0;background:var(--bg);border-top:1px solid var(--
   <div class="done-sub">Check your terminal to complete the ${actionVerb}.</div>
 </div>
 
+<!-- Dedupe modal -->
+<div id="dedupe-modal" class="modal-overlay" hidden>
+  <div class="modal">
+    <div class="modal-head">
+      <h3>Remove Local Duplicates</h3>
+      <button class="modal-close" onclick="closeDedupeModal()" title="Close">✕</button>
+    </div>
+    <div class="modal-body" id="dedupe-body">
+      <p style="color:var(--muted);font-size:12px">Scanning for duplicates…</p>
+    </div>
+    <div class="modal-foot">
+      <button class="cancel-btn" onclick="closeDedupeModal()">Cancel</button>
+      <button class="confirm-btn" id="confirm-dedupe-btn" onclick="confirmDedupe()" disabled>Remove Duplicates</button>
+    </div>
+  </div>
+</div>
+
 <footer id="foot">
   <div class="summary" id="summary"></div>
-  <button class="sync-btn" id="sync-btn" onclick="submitSel()">${actionLabel}</button>
+  <div class="footer-actions">
+    <button class="dedupe-btn" onclick="openDedupeModal()">Dedupe local</button>
+    <button class="sync-btn" id="sync-btn" onclick="submitSel()">${actionLabel}</button>
+  </div>
 </footer>
 
 <script>
 const ITEMS=${itemsJson};
+let _dupes=[];
 
 function countFor(kind){
   return document.querySelectorAll('[data-kind='+kind+']:checked').length;
@@ -433,6 +534,94 @@ async function submitSel(){
     alert('Could not reach the mcpocket server — is the terminal still running?');
   }
 }
+
+// ── Dedupe ───────────────────────────────────────────────────────────────────
+
+async function openDedupeModal(){
+  const modal=document.getElementById('dedupe-modal');
+  const body=document.getElementById('dedupe-body');
+  const confirmBtn=document.getElementById('confirm-dedupe-btn');
+  body.innerHTML='<p style="color:var(--muted);font-size:12px">Scanning for duplicates…</p>';
+  confirmBtn.disabled=true;
+  _dupes=[];
+  modal.hidden=false;
+  try{
+    const res=await fetch('/api/dedupe-preview');
+    const data=await res.json();
+    _dupes=data.dupes||[];
+    renderDedupeBody(_dupes);
+    confirmBtn.disabled=_dupes.length===0;
+  }catch{
+    body.innerHTML='<p style="color:var(--red);font-size:12px">Failed to scan for duplicates.</p>';
+  }
+}
+
+function renderDedupeBody(dupes){
+  const body=document.getElementById('dedupe-body');
+  if(dupes.length===0){
+    body.innerHTML='<div class="modal-empty">No local duplicates found.</div>';
+    return;
+  }
+  const intro='<p style="font-size:12px;color:var(--muted);margin-bottom:12px">'+
+    'These items exist in multiple provider directories. The primary copy (Claude) will be kept; the duplicate will be removed.</p>';
+  const list=dupes.map(d=>{
+    const kindCls='dupe-kind-'+d.kind;
+    return '<div class="dupe-item">'+
+      '<div class="dupe-name">'+escHtml(d.name)+'<span class="dupe-kind '+kindCls+'">'+d.kind+'</span></div>'+
+      '<div class="dupe-detail">'+
+        '<span class="dupe-keep">keep: '+escHtml(d.keepIn)+'</span>'+
+        '<span class="dupe-remove">remove: '+escHtml(d.removeFrom)+escHtml(d.name)+'</span>'+
+      '</div>'+
+    '</div>';
+  }).join('');
+  body.innerHTML=intro+'<div class="dupe-list">'+list+'</div>';
+}
+
+async function confirmDedupe(){
+  const confirmBtn=document.getElementById('confirm-dedupe-btn');
+  const cancelBtn=document.querySelector('#dedupe-modal .cancel-btn');
+  confirmBtn.disabled=true;
+  confirmBtn.textContent='Removing…';
+  cancelBtn.disabled=true;
+  try{
+    const res=await fetch('/api/dedupe',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({dupes:_dupes.map(d=>({name:d.name,kind:d.kind}))})
+    });
+    const data=await res.json();
+    document.getElementById('dedupe-body').innerHTML=
+      '<div class="modal-success">Removed '+data.removed+' duplicate'+(data.removed===1?'':'s')+'.</div>';
+    confirmBtn.style.display='none';
+    cancelBtn.disabled=false;
+    cancelBtn.textContent='Close';
+  }catch{
+    document.getElementById('dedupe-body').innerHTML=
+      '<p style="color:var(--red);font-size:12px">Failed to remove duplicates.</p>';
+    confirmBtn.disabled=false;
+    confirmBtn.textContent='Remove Duplicates';
+    cancelBtn.disabled=false;
+  }
+}
+
+function closeDedupeModal(){
+  document.getElementById('dedupe-modal').hidden=true;
+  const confirmBtn=document.getElementById('confirm-dedupe-btn');
+  const cancelBtn=document.querySelector('#dedupe-modal .cancel-btn');
+  confirmBtn.style.display='';
+  confirmBtn.textContent='Remove Duplicates';
+  cancelBtn.textContent='Cancel';
+  cancelBtn.disabled=false;
+}
+
+function escHtml(s){
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+// Close modal on overlay click
+document.getElementById('dedupe-modal').addEventListener('click',function(e){
+  if(e.target===this) closeDedupeModal();
+});
 
 updateCounts();
 </script>

@@ -212,6 +212,43 @@ function removeEmptyAgentDirs(dir: string): void {
   }
 }
 
+export interface AgentEntry {
+  name: string;
+  provider: 'claude' | 'copilot';
+}
+
+/** List agents with their source provider, deduplicating (Claude takes precedence) */
+export function listLocalAgentsWithProviders(): AgentEntry[] {
+  const claudeNames = listAgentNamesInDir(path.join(getClaudeHomeDir(), AGENTS_DIR));
+  const copilotNames = listAgentNamesInDir(getCopilotAgentsDir());
+  const seen = new Set(claudeNames);
+  return [
+    ...claudeNames.map((name): AgentEntry => ({ name, provider: 'claude' })),
+    ...copilotNames.filter((n) => !seen.has(n)).map((name): AgentEntry => ({ name, provider: 'copilot' })),
+  ];
+}
+
+/** Find agents that exist in both Claude and Copilot directories (Claude wins, Copilot copy is the duplicate) */
+export function findDuplicateAgents(): Array<{ name: string; keepIn: string; removeFrom: string }> {
+  const claudeNames = new Set(listAgentNamesInDir(path.join(getClaudeHomeDir(), AGENTS_DIR)));
+  const copilotNames = listAgentNamesInDir(getCopilotAgentsDir());
+  return copilotNames
+    .filter((n) => claudeNames.has(n))
+    .map((name) => ({ name, keepIn: '~/.claude/agents/', removeFrom: '~/.copilot/agents/' }));
+}
+
+/** Remove an agent file from the Copilot agents directory */
+export function removeAgentFromCopilot(name: string): boolean {
+  const filePath = path.join(getCopilotAgentsDir(), name + '.md');
+  if (!fs.existsSync(filePath)) return false;
+  fs.unlinkSync(filePath);
+  const parentDir = path.dirname(filePath);
+  if (parentDir !== getCopilotAgentsDir() && fs.readdirSync(parentDir).length === 0) {
+    fs.rmdirSync(parentDir);
+  }
+  return true;
+}
+
 function countManagedFiles(dir: string): number {
   let count = 0;
   for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {

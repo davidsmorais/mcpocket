@@ -7,8 +7,8 @@ import { collectFilesFromDir, updateGist } from '../storage/gist.js';
 import { mergeMcpSources, buildPortableConfig } from '../sync/mcp.js';
 import type { McpServersMap } from '../clients/types.js';
 import { readPluginManifests, writePluginManifestsToRepo } from '../sync/plugins.js';
-import { writeAgentsToRepo, listLocalAgentNames } from '../sync/agents.js';
-import { writeSkillsToRepo, listLocalSkillNames } from '../sync/skills.js';
+import { writeAgentsToRepo, listLocalAgentsWithProviders } from '../sync/agents.js';
+import { writeSkillsToRepo, listLocalSkillsWithProviders } from '../sync/skills.js';
 import { prunePocketDir } from '../sync/pocket.js';
 import { formatProviderList, resolveProviderSelection } from './provider-options.js';
 import type { ProviderFlagOptions } from './provider-options.js';
@@ -62,14 +62,20 @@ export async function pushCommand(
     allMcps = mergeMcpSources(...selection.selected.map((p) => p.readMcpServers()));
   }
 
-  const allAgentNames = activeCategories.has('agents') && selection.syncsClaudeHomeAssets
-    ? listLocalAgentNames()
+  const agentEntries = activeCategories.has('agents') && selection.syncsClaudeHomeAssets
+    ? listLocalAgentsWithProviders()
     : [];
-  const allSkillNames = activeCategories.has('skills') && selection.syncsClaudeHomeAssets
-    ? listLocalSkillNames()
+  const skillEntries = activeCategories.has('skills') && selection.syncsClaudeHomeAssets
+    ? listLocalSkillsWithProviders()
     : [];
+  const allAgentNames = agentEntries.map((e) => e.name);
+  const allSkillNames = skillEntries.map((e) => e.name);
   const allMcpNames = Object.keys(allMcps);
   const allPluginPaths = activeCategories.has('plugins') ? Object.keys(readPluginManifests()) : [];
+
+  const agentProviders = Object.fromEntries(agentEntries.map((e) => [e.name, e.provider]));
+  const skillProviders = Object.fromEntries(skillEntries.map((e) => [e.name, e.provider]));
+  const providers = { ...agentProviders, ...skillProviders };
 
   // ── Item selection ────────────────────────────────────────────────────────
 
@@ -78,7 +84,7 @@ export async function pushCommand(
   if (options.ui) {
     const aiProviders = selection.selected.map((p) => p.displayName);
     filters = await openSelectionUi(
-      { agents: allAgentNames, skills: allSkillNames, mcps: allMcpNames, plugins: allPluginPaths, aiProviders },
+      { agents: allAgentNames, skills: allSkillNames, mcps: allMcpNames, plugins: allPluginPaths, aiProviders, agentProviders, skillProviders },
       'push',
     );
   } else if (options.interactive) {
@@ -87,6 +93,7 @@ export async function pushCommand(
       allAgentNames,
       allSkillNames,
       allMcpNames,
+      providers,
     );
   }
 

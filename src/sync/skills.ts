@@ -225,6 +225,47 @@ function listSkillFiles(dir: string, prefix = ''): string[] {
   return files;
 }
 
+export interface SkillEntry {
+  name: string;
+  provider: 'claude' | 'gemini';
+}
+
+/** List skills with their source provider, deduplicating (Claude takes precedence) */
+export function listLocalSkillsWithProviders(): SkillEntry[] {
+  const claudeNames = listSkillNamesInDir(path.join(getClaudeHomeDir(), SKILLS_DIR));
+  const geminiNames = listSkillNamesInDir(getGeminiAgencySkillsDir());
+  const seen = new Set(claudeNames);
+  return [
+    ...claudeNames.map((name): SkillEntry => ({ name, provider: 'claude' })),
+    ...geminiNames.filter((n) => !seen.has(n)).map((name): SkillEntry => ({ name, provider: 'gemini' })),
+  ];
+}
+
+/** Find top-level skills that exist in both Claude and Gemini directories (Claude wins, Gemini copy is the duplicate) */
+export function findDuplicateSkills(): Array<{ name: string; keepIn: string; removeFrom: string }> {
+  const claudeTopLevel = new Set(
+    listSkillNamesInDir(path.join(getClaudeHomeDir(), SKILLS_DIR))
+      .filter((n) => !n.includes('/') && !n.includes(path.sep)),
+  );
+  const geminiTopLevel = listSkillNamesInDir(getGeminiAgencySkillsDir())
+    .filter((n) => !n.includes('/') && !n.includes(path.sep));
+  return geminiTopLevel
+    .filter((n) => claudeTopLevel.has(n))
+    .map((name) => ({
+      name,
+      keepIn: '~/.claude/skills/',
+      removeFrom: '~/.gemini/extensions/agency-agents/skills/',
+    }));
+}
+
+/** Remove a skill directory from the Gemini extensions directory */
+export function removeSkillFromGemini(name: string): boolean {
+  const skillDir = path.join(getGeminiAgencySkillsDir(), name);
+  if (!fs.existsSync(skillDir)) return false;
+  fs.rmSync(skillDir, { recursive: true, force: true });
+  return true;
+}
+
 function countManagedFiles(dir: string): number {
   let count = 0;
   for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {

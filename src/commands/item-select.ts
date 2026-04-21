@@ -26,8 +26,9 @@ const KIND_LABEL: Record<SyncItemKind, string> = {
   mcp:   '[mcp]  ',
 };
 
-function formatSyncItemLabel(item: SyncItem): string {
-  return `${KIND_LABEL[item.kind]}  ${item.name}`;
+function formatSyncItemLabel(item: SyncItem, provider?: string): string {
+  const providerTag = provider ? c.dim(` [${provider}]`) : '';
+  return `${KIND_LABEL[item.kind]}  ${item.name}${providerTag}`;
 }
 
 /**
@@ -45,6 +46,7 @@ export async function promptForItemSelection(
   agentNames: string[],
   skillNames: string[],
   mcpNames: string[],
+  providers?: Record<string, string>,
 ): Promise<ItemFilters> {
   const items: SyncItem[] = [
     ...agentNames.sort().map((name) => ({ kind: 'agent' as SyncItemKind, name })),
@@ -56,7 +58,7 @@ export async function promptForItemSelection(
 
   const selected = await askMultiSelect<SyncItem>(
     question,
-    items.map((item) => ({ label: formatSyncItemLabel(item), value: item })),
+    items.map((item) => ({ label: formatSyncItemLabel(item, providers?.[item.name]), value: item })),
   );
 
   const selectedAgentNames = selected.filter((i) => i.kind === 'agent').map((i) => i.name);
