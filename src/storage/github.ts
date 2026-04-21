@@ -153,7 +153,7 @@ export function commitAndPush(localDir: string, token: string, remoteUrl: string
   }
 
   run('git', ['commit', '-m', message], { cwd: localDir });
-  run('git', ['push', 'origin', 'main'], { cwd: localDir });
+  run('git', ['push', 'origin', 'HEAD:main'], { cwd: localDir });
 }
 
 /** Configure git user in the repo if not set globally */

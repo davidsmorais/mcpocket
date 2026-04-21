@@ -1,6 +1,6 @@
 import * as fs from 'fs';
 import * as path from 'path';
-import { getCopilotCliConfigPath } from '../utils/paths.js';
+import { getCopilotCliConfigPath, getCopilotHomeMcpConfigPath } from '../utils/paths.js';
 import type { McpServerConfig, McpServersMap } from './types.js';
 
 interface CopilotCliConfig {
@@ -10,18 +10,31 @@ interface CopilotCliConfig {
 }
 
 export function readCopilotCliMcpServers(): McpServersMap {
-  const configPath = getCopilotCliConfigPath();
-  if (!fs.existsSync(configPath)) {
-    return {};
+  const vscodePath = getCopilotCliConfigPath();
+  const copilotHomePath = getCopilotHomeMcpConfigPath();
+
+  let vscodeServers: McpServersMap = {};
+  if (fs.existsSync(vscodePath)) {
+    try {
+      const config: CopilotCliConfig = JSON.parse(fs.readFileSync(vscodePath, 'utf8'));
+      vscodeServers = config.servers ?? config.mcpServers ?? {};
+    } catch {
+      console.warn(`[mcpocket] Could not read Copilot CLI MCP config at ${vscodePath}`);
+    }
   }
 
-  try {
-    const config: CopilotCliConfig = JSON.parse(fs.readFileSync(configPath, 'utf8'));
-    return config.servers ?? config.mcpServers ?? {};
-  } catch {
-    console.warn(`[mcpocket] Could not read Copilot CLI MCP config at ${configPath}`);
-    return {};
+  let copilotHomeServers: McpServersMap = {};
+  if (fs.existsSync(copilotHomePath)) {
+    try {
+      const config: CopilotCliConfig = JSON.parse(fs.readFileSync(copilotHomePath, 'utf8'));
+      copilotHomeServers = config.servers ?? config.mcpServers ?? {};
+    } catch {
+      console.warn(`[mcpocket] Could not read Copilot home MCP config at ${copilotHomePath}`);
+    }
   }
+
+  // VS Code config takes precedence over ~/.copilot/mcp-config.json on conflict
+  return { ...copilotHomeServers, ...vscodeServers };
 }
 
 export function writeCopilotCliMcpServers(servers: McpServersMap): void {

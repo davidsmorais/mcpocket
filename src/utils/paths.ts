@@ -141,6 +141,49 @@ export function getAntigravityConfigPath(): string {
 }
 
 /**
+ * Get the ~/.copilot directory used by GitHub Copilot native tools.
+ */
+export function getCopilotHomeDir(): string {
+  return path.join(HOME, '.copilot');
+}
+
+/**
+ * Get the ~/.copilot/mcp-config.json path used by GitHub Copilot CLI.
+ */
+export function getCopilotHomeMcpConfigPath(): string {
+  return path.join(HOME, '.copilot', 'mcp-config.json');
+}
+
+/**
+ * Get the ~/.copilot/agents directory used by GitHub Copilot.
+ */
+export function getCopilotAgentsDir(): string {
+  return path.join(HOME, '.copilot', 'agents');
+}
+
+/**
+ * Get the ~/.gemini directory used by Gemini CLI / Project IDX tools.
+ */
+export function getGeminiHomeDir(): string {
+  return path.join(HOME, '.gemini');
+}
+
+/**
+ * Get the ~/.gemini/extensions/agency-agents/skills directory.
+ * This is where the agency-agents Gemini extension stores its skills.
+ */
+export function getGeminiAgencySkillsDir(): string {
+  return path.join(HOME, '.gemini', 'extensions', 'agency-agents', 'skills');
+}
+
+/**
+ * Get the ~/.opencode directory used by OpenCode.
+ */
+export function getOpenCodeHomeDir(): string {
+  return path.join(HOME, '.opencode');
+}
+
+/**
  * Get the VS Code user MCP config path used by Copilot tools.
  */
 export function getCopilotCliConfigPath(): string {

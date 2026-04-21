@@ -1,6 +1,6 @@
 import * as fs from 'fs';
 import * as path from 'path';
-import { getClaudeHomeDir } from '../utils/paths.js';
+import { getClaudeHomeDir, getGeminiAgencySkillsDir } from '../utils/paths.js';
 import { mirrorDirectory } from '../utils/files.js';
 import type { SyncResult } from './agents.js';
 
@@ -30,10 +30,13 @@ function isAllowedTopLevel(relPath: string, allowedNames?: ReadonlySet<string>):
   return false;
 }
 
-/** List skill names (top-level entries) available in ~/.claude/skills/ */
+/** List skill names (top-level entries) available in ~/.claude/skills/ and ~/.gemini/extensions/agency-agents/skills/ */
 export function listLocalSkillNames(): string[] {
-  const dir = path.join(getClaudeHomeDir(), SKILLS_DIR);
-  return listSkillNamesInDir(dir);
+  const claudeNames = listSkillNamesInDir(path.join(getClaudeHomeDir(), SKILLS_DIR));
+  const geminiNames = listSkillNamesInDir(getGeminiAgencySkillsDir());
+  const seen = new Set(claudeNames);
+  const extras = geminiNames.filter((n) => !seen.has(n));
+  return [...claudeNames, ...extras];
 }
 
 /** List skill names (top-level entries) available in repo/skills/ */
@@ -65,20 +68,26 @@ function listSkillNamesInDir(dir: string): string[] {
   return names;
 }
 
-/** Copy skills/ from ~/.claude/skills/ to repo/skills/ (excluding node_modules) */
+/** Copy skills/ from ~/.claude/skills/ (and ~/.gemini/extensions/agency-agents/skills/ if present) to repo/skills/ */
 export function writeSkillsToRepo(repoDir: string, allowedNames?: ReadonlySet<string>): SyncResult {
-  const source = path.join(getClaudeHomeDir(), SKILLS_DIR);
+  const claudeSource = path.join(getClaudeHomeDir(), SKILLS_DIR);
+  const geminiSource = getGeminiAgencySkillsDir();
   const dest = path.join(repoDir, SKILLS_DIR);
 
-  if (!fs.existsSync(source)) {
+  const includeDir = (relPath: string) => !shouldSkip(path.basename(relPath)) && isAllowedTopLevel(relPath, allowedNames);
+  const includeFile = (relPath: string) => relPath.endsWith('.md') && !shouldSkip(path.basename(relPath)) && isAllowedTopLevel(relPath, allowedNames);
+
+  const sources = [geminiSource, claudeSource].filter(fs.existsSync);
+  if (sources.length === 0) {
     const removed = removeManagedDir(dest);
     return { synced: 0, removed };
   }
 
-  return mirrorDirectory(source, dest, {
-    includeDirectory: (relPath) => !shouldSkip(path.basename(relPath)) && isAllowedTopLevel(relPath, allowedNames),
-    includeFile: (relPath) => relPath.endsWith('.md') && !shouldSkip(path.basename(relPath)) && isAllowedTopLevel(relPath, allowedNames),
-  });
+  if (sources.length === 1) {
+    return mirrorDirectory(sources[0], dest, { includeDirectory: includeDir, includeFile });
+  }
+
+  return mirrorMultipleSkillDirs(sources, dest, { includeDirectory: includeDir, includeFile });
 }
 
 /** Copy skills/ from repo/skills/ to ~/.claude/skills/ (overwrite, excluding node_modules) */
@@ -138,6 +147,82 @@ export function pruneSkillsFromRepo(repoDir: string, keepNames: ReadonlySet<stri
   scanAndRemove(dir);
   pruneEmptyDirs(dir);
   return { synced: 0, removed };
+}
+
+interface MirrorOptions {
+  includeFile?: (relPath: string) => boolean;
+  includeDirectory?: (relPath: string) => boolean;
+}
+
+function mirrorMultipleSkillDirs(
+  sourceDirs: string[],
+  destDir: string,
+  options: MirrorOptions = {},
+): SyncResult {
+  const includeFile = options.includeFile ?? (() => true);
+  const includeDirectory = options.includeDirectory ?? (() => true);
+
+  const sourceFiles = new Map<string, string>();
+  for (const sourceDir of sourceDirs) {
+    collectSkillFiles(sourceDir, '', sourceFiles, includeFile, includeDirectory);
+  }
+
+  fs.mkdirSync(destDir, { recursive: true });
+
+  let synced = 0;
+  for (const [relPath, fullPath] of sourceFiles) {
+    const destPath = path.join(destDir, relPath);
+    fs.mkdirSync(path.dirname(destPath), { recursive: true });
+    fs.copyFileSync(fullPath, destPath);
+    synced++;
+  }
+
+  const destFiles = listSkillFiles(destDir);
+  let removed = 0;
+  for (const relPath of destFiles) {
+    if (!includeFile(relPath)) continue;
+    if (!sourceFiles.has(relPath)) {
+      fs.rmSync(path.join(destDir, relPath), { force: true });
+      removed++;
+    }
+  }
+
+  pruneEmptyDirs(destDir);
+  return { synced, removed };
+}
+
+function collectSkillFiles(
+  dir: string,
+  prefix: string,
+  files: Map<string, string>,
+  includeFile: (relPath: string) => boolean,
+  includeDirectory: (relPath: string) => boolean,
+): void {
+  if (!fs.existsSync(dir)) return;
+  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+    const relPath = prefix ? path.join(prefix, entry.name).replace(/\\/g, '/') : entry.name;
+    if (entry.isDirectory()) {
+      if (includeDirectory(relPath)) {
+        collectSkillFiles(path.join(dir, entry.name), relPath, files, includeFile, includeDirectory);
+      }
+    } else if (entry.isFile() && includeFile(relPath)) {
+      files.set(relPath, path.join(dir, entry.name));
+    }
+  }
+}
+
+function listSkillFiles(dir: string, prefix = ''): string[] {
+  if (!fs.existsSync(dir)) return [];
+  const files: string[] = [];
+  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+    const relPath = prefix ? path.join(prefix, entry.name).replace(/\\/g, '/') : entry.name;
+    if (entry.isDirectory()) {
+      files.push(...listSkillFiles(path.join(dir, entry.name), relPath));
+    } else if (entry.isFile()) {
+      files.push(relPath);
+    }
+  }
+  return files;
 }
 
 function countManagedFiles(dir: string): number {
