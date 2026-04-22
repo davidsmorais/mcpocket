@@ -62,10 +62,10 @@ export async function pushCommand(
     allMcps = mergeMcpSources(...selection.selected.map((p) => p.readMcpServers()));
   }
 
-  const agentEntries = activeCategories.has('agents') && selection.syncsClaudeHomeAssets
+  const agentEntries = activeCategories.has('agents')
     ? listLocalAgentsWithProviders()
     : [];
-  const skillEntries = activeCategories.has('skills') && selection.syncsClaudeHomeAssets
+  const skillEntries = activeCategories.has('skills')
     ? listLocalSkillsWithProviders()
     : [];
   const allAgentNames = agentEntries.map((e) => e.name);
@@ -215,12 +215,8 @@ function syncClaudeHomeAssetsToPocket(
   const shouldSyncPlugins = hasExplicitCategories
     ? activeCategories.has('plugins')
     : activeCategories.has('plugins') && syncsClaudeHomeAssets;
-  const shouldSyncAgents = hasExplicitCategories
-    ? activeCategories.has('agents')
-    : activeCategories.has('agents') && syncsClaudeHomeAssets;
-  const shouldSyncSkills = hasExplicitCategories
-    ? activeCategories.has('skills')
-    : activeCategories.has('skills') && syncsClaudeHomeAssets;
+  const shouldSyncAgents = activeCategories.has('agents');
+  const shouldSyncSkills = activeCategories.has('skills');
 
   let manifestCount = 0;
   let pluginResult = { synced: 0, removed: 0 };

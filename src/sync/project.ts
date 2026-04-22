@@ -35,9 +35,46 @@ const WELL_KNOWN_AI_FILES = [
   'GEMINI.md',
 ];
 
+// Project-local provider directories to scan for agents, skills, and extensions
+const WELL_KNOWN_AI_DIRS = [
+  '.claude/agents',
+  '.claude/skills',
+  '.copilot/agents',
+  '.opencode',
+];
+
+const SKIP_NAMES = new Set(['node_modules', '.git', 'dist', '.cache', '__pycache__']);
+
 export function discoverProjectFiles(): string[] {
   const cwd = process.cwd();
-  return WELL_KNOWN_AI_FILES.filter((file) => fs.existsSync(path.join(cwd, file)));
+  const files: string[] = [];
+
+  for (const file of WELL_KNOWN_AI_FILES) {
+    if (fs.existsSync(path.join(cwd, file))) {
+      files.push(file);
+    }
+  }
+
+  for (const dir of WELL_KNOWN_AI_DIRS) {
+    const dirPath = path.join(cwd, dir);
+    if (fs.existsSync(dirPath)) {
+      collectProjectFiles(dirPath, dir, files);
+    }
+  }
+
+  return files;
+}
+
+function collectProjectFiles(absDir: string, relDir: string, result: string[]): void {
+  for (const entry of fs.readdirSync(absDir, { withFileTypes: true })) {
+    if (entry.name.startsWith('.') || SKIP_NAMES.has(entry.name)) continue;
+    const relPath = relDir + '/' + entry.name;
+    if (entry.isDirectory()) {
+      collectProjectFiles(path.join(absDir, entry.name), relPath, result);
+    } else if (entry.isFile()) {
+      result.push(relPath);
+    }
+  }
 }
 
 export function copyProjectFilesToPocket(
