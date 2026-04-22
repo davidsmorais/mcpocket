@@ -1,11 +1,11 @@
 import * as fs from 'fs';
 import * as path from 'path';
-import { getClaudeHomeDir, getCopilotAgentsDir } from '../utils/paths.js';
+import { getClaudeHomeDir, getCopilotAgentsDir, getGeminiAgentsDir } from '../utils/paths.js';
 import { mirrorDirectory } from '../utils/files.js';
 
 const AGENTS_DIR = 'agents';
 
-const PROVIDER_SUBDIRS = ['claude-code', 'copilot-cli'] as const;
+const PROVIDER_SUBDIRS = ['claude-code', 'copilot-cli', 'gemini-cli'] as const;
 type AgentProviderId = typeof PROVIDER_SUBDIRS[number];
 
 export interface SyncResult {
@@ -25,13 +25,16 @@ function isIncludedFile(relPath: string, allowedNames?: ReadonlySet<string>): bo
   return allowedNames.has(agentName);
 }
 
-/** List agent names available in ~/.claude/agents/ and ~/.copilot/agents/ */
+/** List agent names available in ~/.claude/agents/, ~/.copilot/agents/, and ~/.gemini/agents/ */
 export function listLocalAgentNames(): string[] {
   const claudeNames = listAgentNamesInDir(path.join(getClaudeHomeDir(), AGENTS_DIR));
   const copilotNames = listAgentNamesInDir(getCopilotAgentsDir());
+  const geminiNames = listAgentNamesInDir(getGeminiAgentsDir());
   const seen = new Set(claudeNames);
-  const extras = copilotNames.filter((n) => !seen.has(n));
-  return [...claudeNames, ...extras];
+  const copilotExtras = copilotNames.filter((n) => !seen.has(n));
+  copilotExtras.forEach((name) => seen.add(name));
+  const geminiExtras = geminiNames.filter((n) => !seen.has(n));
+  return [...claudeNames, ...copilotExtras, ...geminiExtras];
 }
 
 /** List agent names available in repo/agents/ (supports both provider-scoped and flat structure) */
@@ -110,6 +113,7 @@ function listAgentNamesInDir(dir: string): string[] {
 export function writeAgentsToRepo(repoDir: string, allowedNames?: ReadonlySet<string>, selectedProviders?: ReadonlySet<string>): SyncResult {
   const claudeSource = path.join(getClaudeHomeDir(), AGENTS_DIR);
   const copilotSource = getCopilotAgentsDir();
+  const geminiSource = getGeminiAgentsDir();
   const agentsDir = path.join(repoDir, AGENTS_DIR);
 
   const sources: Array<{ dir: string; provider: AgentProviderId }> = [];
@@ -118,6 +122,9 @@ export function writeAgentsToRepo(repoDir: string, allowedNames?: ReadonlySet<st
   }
   if (fs.existsSync(copilotSource) && (!selectedProviders || selectedProviders.has('copilot-cli'))) {
     sources.push({ dir: copilotSource, provider: 'copilot-cli' });
+  }
+  if (fs.existsSync(geminiSource) && (!selectedProviders || selectedProviders.has('gemini-cli'))) {
+    sources.push({ dir: geminiSource, provider: 'gemini-cli' });
   }
 
   if (sources.length === 0) {
@@ -163,6 +170,7 @@ function getAgentProviderTarget(providerId: AgentProviderId): string {
   const targets: Record<AgentProviderId, string> = {
     'claude-code': path.join(getClaudeHomeDir(), AGENTS_DIR),
     'copilot-cli': getCopilotAgentsDir(),
+    'gemini-cli': getGeminiAgentsDir(),
   };
   return targets[providerId];
 }
@@ -277,17 +285,21 @@ function removeEmptyAgentDirs(dir: string): void {
 
 export interface AgentEntry {
   name: string;
-  provider: 'claude' | 'copilot';
+  provider: 'claude' | 'copilot' | 'gemini';
 }
 
 /** List agents with their source provider, deduplicating (Claude takes precedence) */
 export function listLocalAgentsWithProviders(): AgentEntry[] {
   const claudeNames = listAgentNamesInDir(path.join(getClaudeHomeDir(), AGENTS_DIR));
   const copilotNames = listAgentNamesInDir(getCopilotAgentsDir());
+  const geminiNames = listAgentNamesInDir(getGeminiAgentsDir());
   const seen = new Set(claudeNames);
+  const copilotUnique = copilotNames.filter((n) => !seen.has(n));
+  copilotUnique.forEach((name) => seen.add(name));
   return [
     ...claudeNames.map((name): AgentEntry => ({ name, provider: 'claude' })),
-    ...copilotNames.filter((n) => !seen.has(n)).map((name): AgentEntry => ({ name, provider: 'copilot' })),
+    ...copilotUnique.map((name): AgentEntry => ({ name, provider: 'copilot' })),
+    ...geminiNames.filter((n) => !seen.has(n)).map((name): AgentEntry => ({ name, provider: 'gemini' })),
   ];
 }
 

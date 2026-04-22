@@ -1,12 +1,13 @@
 import * as fs from 'fs';
 import * as path from 'path';
-import { getClaudeHomeDir, getGeminiAgencySkillsDir } from '../utils/paths.js';
+import { getClaudeHomeDir, getGeminiAgencySkillsDir, getGeminiSkillsDir } from '../utils/paths.js';
 import { mirrorDirectory } from '../utils/files.js';
 import type { SyncResult } from './agents.js';
 
 const SKILLS_DIR = 'skills';
 
-const PROVIDER_SUBDIRS = ['claude-code', 'antigravity'] as const;
+const PROVIDER_SUBDIRS = ['claude-code', 'gemini-cli'] as const;
+const LEGACY_PROVIDER_SUBDIRS = ['antigravity'] as const;
 type SkillProviderId = typeof PROVIDER_SUBDIRS[number];
 
 const SKIP_DIRS = new Set(['node_modules', '.git', 'dist', '.cache', '__pycache__']);
@@ -30,10 +31,10 @@ function isAllowedTopLevel(relPath: string, allowedNames?: ReadonlySet<string>):
   return false;
 }
 
-/** List skill names available in ~/.claude/skills/ and ~/.gemini/extensions/agency-agents/skills/ */
+/** List skill names available in ~/.claude/skills/ and Gemini CLI skill directories. */
 export function listLocalSkillNames(): string[] {
   const claudeNames = listSkillNamesInDir(path.join(getClaudeHomeDir(), SKILLS_DIR));
-  const geminiNames = listSkillNamesInDir(getGeminiAgencySkillsDir());
+  const geminiNames = listGeminiSkillNames();
   const seen = new Set(claudeNames);
   const extras = geminiNames.filter((n) => !seen.has(n));
   return [...claudeNames, ...extras];
@@ -45,7 +46,12 @@ export function listRepoSkillNames(repoDir: string): string[] {
   if (!fs.existsSync(skillsDir)) return [];
 
   const providerDirs = PROVIDER_SUBDIRS
-    .map((subdir) => path.join(skillsDir, subdir))
+    .flatMap((subdir) => {
+      if (subdir === 'gemini-cli') {
+        return [path.join(skillsDir, subdir), ...LEGACY_PROVIDER_SUBDIRS.map((legacy) => path.join(skillsDir, legacy))];
+      }
+      return [path.join(skillsDir, subdir)];
+    })
     .filter(fs.existsSync);
 
   if (providerDirs.length > 0) {
@@ -78,7 +84,7 @@ function listFlatSkillNames(skillsDir: string): string[] {
   const names: string[] = [];
   if (!fs.existsSync(skillsDir)) return names;
   for (const entry of fs.readdirSync(skillsDir, { withFileTypes: true })) {
-    if (entry.isDirectory() && !shouldSkip(entry.name) && !PROVIDER_SUBDIRS.includes(entry.name as SkillProviderId)) {
+    if (entry.isDirectory() && !shouldSkip(entry.name) && !PROVIDER_SUBDIRS.includes(entry.name as SkillProviderId) && !LEGACY_PROVIDER_SUBDIRS.includes(entry.name as typeof LEGACY_PROVIDER_SUBDIRS[number])) {
       names.push(entry.name);
     }
   }
@@ -112,7 +118,6 @@ function listSkillNamesInDir(dir: string): string[] {
  */
 export function writeSkillsToRepo(repoDir: string, allowedNames?: ReadonlySet<string>, selectedProviders?: ReadonlySet<string>): SyncResult {
   const claudeSource = path.join(getClaudeHomeDir(), SKILLS_DIR);
-  const geminiSource = getGeminiAgencySkillsDir();
   const skillsDir = path.join(repoDir, SKILLS_DIR);
 
   const includeDir = (relPath: string) => !shouldSkip(path.basename(relPath)) && isAllowedTopLevel(relPath, allowedNames);
@@ -122,8 +127,9 @@ export function writeSkillsToRepo(repoDir: string, allowedNames?: ReadonlySet<st
   if (fs.existsSync(claudeSource) && (!selectedProviders || selectedProviders.has('claude-code'))) {
     sources.push({ dir: claudeSource, provider: 'claude-code' });
   }
-  if (fs.existsSync(geminiSource) && (!selectedProviders || selectedProviders.has('antigravity'))) {
-    sources.push({ dir: geminiSource, provider: 'antigravity' });
+  const geminiSource = getPreferredGeminiSkillSourceDir();
+  if (geminiSource && (!selectedProviders || selectedProviders.has('gemini-cli'))) {
+    sources.push({ dir: geminiSource, provider: 'gemini-cli' });
   }
 
   if (sources.length === 0) {
@@ -161,7 +167,7 @@ export function writeSkillsToRepo(repoDir: string, allowedNames?: ReadonlySet<st
 function getSkillProviderTarget(providerId: SkillProviderId): string {
   const targets: Record<SkillProviderId, string> = {
     'claude-code': path.join(getClaudeHomeDir(), SKILLS_DIR),
-    'antigravity': getGeminiAgencySkillsDir(),
+    'gemini-cli': getGeminiSkillsDir(),
   };
   return targets[providerId];
 }
@@ -175,7 +181,12 @@ export function applySkillsFromRepo(repoDir: string, allowedNames?: ReadonlySet<
 
   const providerDirs = PROVIDER_SUBDIRS
     .filter((subdir) => !selectedProviders || selectedProviders.has(subdir))
-    .map((subdir) => path.join(skillsDir, subdir))
+    .flatMap((subdir) => {
+      if (subdir === 'gemini-cli') {
+        return [path.join(skillsDir, subdir), ...LEGACY_PROVIDER_SUBDIRS.map((legacy) => path.join(skillsDir, legacy))];
+      }
+      return [path.join(skillsDir, subdir)];
+    })
     .filter(fs.existsSync);
 
   if (providerDirs.length === 0) {
@@ -197,8 +208,10 @@ export function applySkillsFromRepo(repoDir: string, allowedNames?: ReadonlySet<
   let totalRemoved = 0;
 
   for (const providerSubdir of PROVIDER_SUBDIRS) {
-    const sourceDir = path.join(skillsDir, providerSubdir);
-    if (!fs.existsSync(sourceDir)) continue;
+    const sourceDir = providerSubdir === 'gemini-cli'
+      ? getPreferredRepoGeminiSkillSourceDir(skillsDir)
+      : path.join(skillsDir, providerSubdir);
+    if (!sourceDir || !fs.existsSync(sourceDir)) continue;
 
     const destDir = getSkillProviderTarget(providerSubdir);
     const result = mirrorDirectory(sourceDir, destDir, {
@@ -302,7 +315,7 @@ export interface SkillEntry {
 /** List skills with their source provider, deduplicating (Claude takes precedence) */
 export function listLocalSkillsWithProviders(): SkillEntry[] {
   const claudeNames = listSkillNamesInDir(path.join(getClaudeHomeDir(), SKILLS_DIR));
-  const geminiNames = listSkillNamesInDir(getGeminiAgencySkillsDir());
+  const geminiNames = listGeminiSkillNames();
   const seen = new Set(claudeNames);
   return [
     ...claudeNames.map((name): SkillEntry => ({ name, provider: 'claude' })),
@@ -346,20 +359,20 @@ export function findDuplicateSkills(): Array<{ name: string; keepIn: string; rem
     listSkillNamesInDir(path.join(getClaudeHomeDir(), SKILLS_DIR))
       .filter((n) => !n.includes('/') && !n.includes(path.sep)),
   );
-  const geminiTopLevel = listSkillNamesInDir(getGeminiAgencySkillsDir())
+  const geminiTopLevel = listGeminiSkillNames()
     .filter((n) => !n.includes('/') && !n.includes(path.sep));
   return geminiTopLevel
     .filter((n) => claudeTopLevel.has(n))
     .map((name) => ({
       name,
       keepIn: '~/.claude/skills/',
-      removeFrom: '~/.gemini/extensions/agency-agents/skills/',
+      removeFrom: '~/.gemini/skills/',
     }));
 }
 
-/** Remove a skill directory from the Gemini extensions directory */
+/** Remove a skill directory from the Gemini CLI skills directory */
 export function removeSkillFromGemini(name: string): boolean {
-  const skillDir = path.join(getGeminiAgencySkillsDir(), name);
+  const skillDir = path.join(getGeminiSkillsDir(), name);
   if (!fs.existsSync(skillDir)) return false;
   fs.rmSync(skillDir, { recursive: true, force: true });
   return true;
@@ -406,4 +419,32 @@ function migrateFlatSkillsToProviderDirs(skillsDir: string): number {
     }
   }
   return removed;
+}
+
+function getGeminiSkillSourceDirs(): string[] {
+  return [getGeminiSkillsDir(), getGeminiAgencySkillsDir()];
+}
+
+function getPreferredGeminiSkillSourceDir(): string | undefined {
+  return getGeminiSkillSourceDirs().find((dir) => fs.existsSync(dir));
+}
+
+function listGeminiSkillNames(): string[] {
+  const names: string[] = [];
+  const seen = new Set<string>();
+  for (const sourceDir of getGeminiSkillSourceDirs()) {
+    const sourceNames = listSkillNamesInDir(sourceDir);
+    for (const name of sourceNames) {
+      if (!seen.has(name)) {
+        seen.add(name);
+        names.push(name);
+      }
+    }
+  }
+  return names;
+}
+
+function getPreferredRepoGeminiSkillSourceDir(skillsDir: string): string | undefined {
+  const candidates = [path.join(skillsDir, 'gemini-cli'), ...LEGACY_PROVIDER_SUBDIRS.map((legacy) => path.join(skillsDir, legacy))];
+  return candidates.find((dir) => fs.existsSync(dir));
 }

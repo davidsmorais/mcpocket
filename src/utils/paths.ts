@@ -134,7 +134,15 @@ export function getCodexConfigPath(): string {
 }
 
 /**
- * Get the Antigravity MCP config path
+ * Get the Gemini CLI MCP settings path
+ */
+export function getGeminiCliSettingsPath(): string {
+  return path.join(HOME, '.gemini', 'settings.json');
+}
+
+/**
+ * @deprecated Use getGeminiCliSettingsPath.
+ * Legacy Antigravity config path kept for backward compatibility.
  */
 export function getAntigravityConfigPath(): string {
   return path.join(HOME, '.gemini', 'antigravity', 'mcp_config.json');
@@ -174,6 +182,20 @@ export function getGeminiHomeDir(): string {
  */
 export function getGeminiAgencySkillsDir(): string {
   return path.join(HOME, '.gemini', 'extensions', 'agency-agents', 'skills');
+}
+
+/**
+ * Get the ~/.gemini/agents directory used by Gemini CLI.
+ */
+export function getGeminiAgentsDir(): string {
+  return path.join(HOME, '.gemini', 'agents');
+}
+
+/**
+ * Get the ~/.gemini/skills directory used by Gemini CLI.
+ */
+export function getGeminiSkillsDir(): string {
+  return path.join(HOME, '.gemini', 'skills');
 }
 
 /**

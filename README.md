@@ -32,7 +32,7 @@ mcpocket acts as a centralized sync hub for your AI setup. Push your configurati
 
 ## Features
 
-- **Multi-client sync** — Claude Desktop, Claude Code, OpenCode, Copilot CLI, Cursor, Codex, and Antigravity configs in one shot
+- **Multi-client sync** — Claude Desktop, Claude Code, OpenCode, Copilot CLI, Cursor, Codex, and Gemini CLI configs in one shot
 - **Two storage backends** — private GitHub repo (full git history) or lightweight GitHub Gist
 - **Provider-scoped sync** — target one or more providers with flags like `--copilot-cli` or `--opencode`
 - **Project mode** — sync project-level AI config files (CLAUDE.md, .cursorrules, etc.) per-project with `--project`
@@ -180,7 +180,7 @@ With provider flags, pull only writes MCP servers to those selected providers. C
 | Copilot CLI | VS Code/Copilot user `mcp.json` (push also reads `~/.copilot/mcp-config.json`) |
 | Cursor | `~/.cursor/mcp.json` |
 | Codex | `~/.codex/config.toml` |
-| Antigravity | `~/.gemini/antigravity/mcp_config.json` |
+| Gemini CLI | `~/.gemini/settings.json` |
 
 Pull is **additive** — it adds servers that exist remotely but not locally, without overwriting your existing local config. Restart Claude Desktop after pulling to apply MCP changes.
 
@@ -268,16 +268,16 @@ mcpocket status
 
 | Category | Source | Details |
 |---|---|---|
-| MCP server configs | Claude Desktop, Claude Code, OpenCode, Copilot CLI, Cursor, Codex, Antigravity | Merged across all selected providers |
+| MCP server configs | Claude Desktop, Claude Code, OpenCode, Copilot CLI, Cursor, Codex, Gemini CLI | Merged across all selected providers |
 | Plugin manifests | `~/.claude/plugins/` | `installed_plugins.json`, `blocklist.json`, `known_marketplaces.json` |
-| Agents | `~/.claude/agents/` and `~/.copilot/agents/` | All `*.md` files, recursively; merged from both sources — Claude wins on conflict |
-| Skills | `~/.claude/skills/` and `~/.gemini/extensions/agency-agents/skills/` | All files, recursively (excluding `node_modules`); merged from both sources — Claude wins on conflict |
+| Agents | `~/.claude/agents/`, `~/.copilot/agents/`, and `~/.gemini/agents/` | All `*.md` files, recursively; merged from all sources — Claude wins on conflict |
+| Skills | `~/.claude/skills/` and `~/.gemini/skills/` | All files, recursively (excluding `node_modules`); merged from both sources — Claude wins on conflict |
 
 If you do not pass provider flags, `push` and `pull` operate on every supported provider. If you do pass flags, only those providers participate in the command.
 
 ### Multi-source agents and skills
 
-On push, agents are collected from both `~/.claude/agents/` and `~/.copilot/agents/`, and skills from both `~/.claude/skills/` and `~/.gemini/extensions/agency-agents/skills/`. Files from both sources are merged into a single pocket. When the same filename exists in both source directories, the Claude home directory (`~/.claude/`) takes precedence. On pull, agents and skills are always restored only to `~/.claude/agents/` and `~/.claude/skills/`, respectively — the other source directories are never written to.
+On push, agents are collected from `~/.claude/agents/`, `~/.copilot/agents/`, and `~/.gemini/agents/`, and skills from `~/.claude/skills/` and `~/.gemini/skills/`. Files from these sources are merged into a single pocket. When the same filename exists in multiple source directories, the Claude home directory (`~/.claude/`) takes precedence. On pull, provider-scoped files are restored to their matching directories (`~/.claude/...`, `~/.copilot/...`, and `~/.gemini/...`).
 
 ### Never Synced
 

@@ -5,7 +5,7 @@ import { readOpenCodeMcpServers, writeOpenCodeMcpServers, getConfigPath as getOp
 import { readCopilotCliMcpServers, writeCopilotCliMcpServers, getConfigPath as getCopilotCliPath } from './copilot-cli.js';
 import { readCursorMcpServers, writeCursorMcpServers, getConfigPath as getCursorPath } from './cursor.js';
 import { readCodexMcpServers, writeCodexMcpServers, getConfigPath as getCodexPath } from './codex.js';
-import { readAntigravityMcpServers, writeAntigravityMcpServers, getConfigPath as getAntigravityPath } from './antigravity.js';
+import { readGeminiCliMcpServers, writeGeminiCliMcpServers, getConfigPath as getGeminiCliPath } from './gemini-cli.js';
 
 export const ALL_PROVIDERS: ProviderDefinition[] = [
   {
@@ -63,13 +63,13 @@ export const ALL_PROVIDERS: ProviderDefinition[] = [
     writeMcpServers: writeCodexMcpServers,
   },
   {
-    id: 'antigravity',
-    displayName: 'Antigravity',
-    optionName: 'antigravity',
+    id: 'gemini-cli',
+    displayName: 'Gemini CLI',
+    optionName: 'geminiCli',
     syncsClaudeHomeAssets: false,
-    getConfigPath: getAntigravityPath,
-    readMcpServers: readAntigravityMcpServers,
-    writeMcpServers: writeAntigravityMcpServers,
+    getConfigPath: getGeminiCliPath,
+    readMcpServers: readGeminiCliMcpServers,
+    writeMcpServers: writeGeminiCliMcpServers,
   },
 ];
 

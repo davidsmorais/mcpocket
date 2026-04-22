@@ -67,6 +67,7 @@ export async function promptForItemSelection(
       'copilot-cli': 'copilot',
       'cursor': '',
       'codex': '',
+      'gemini-cli': 'gemini',
       'antigravity': 'gemini',
     };
 
