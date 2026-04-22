@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.6.9] - 2026-04-22
+
+### Added
+- Provider-aware repo listing for agents and skills in the pull command, enabling interactive and filter UIs to show which provider each item comes from.
+
 ## [0.6.7] - 2026-04-22
 
 ### Fixed
