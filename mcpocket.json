@@ -1,0 +1,7 @@
+{
+  "projectName": "mcpocket",
+  "files": [
+    ".opencode/commands/release.md",
+    ".opencode/plugins/graphify.js"
+  ]
+}

@@ -15,8 +15,8 @@ export interface UiItems {
   aiProviders?: string[];
   agentProviders?: Record<string, string>;
   skillProviders?: Record<string, string>;
-  // NEW: provider list for UI-driven selection
   providers?: Array<{ id: string; displayName: string; color: string }>;
+  projects?: Record<string, string[]>;
 }
 
 /**
@@ -117,7 +117,7 @@ export async function openSelectionUi(
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 function buildFilters(
-  sel: { agents: string[]; skills: string[]; mcps: string[]; plugins?: string[]; aiProviders?: string[]; providers?: string[] },
+  sel: { agents: string[]; skills: string[]; mcps: string[]; plugins?: string[]; aiProviders?: string[]; providers?: string[]; projects?: string[] },
   available: UiItems,
 ): ItemFilters {
   const filters: ItemFilters = {};
@@ -321,6 +321,80 @@ function renderGroup(
   </div>`;
 }
 
+function renderProjectsGroup(projects: Record<string, string[]>): string {
+  const projectEntries = Object.entries(projects);
+  const itemsHtml = projectEntries.map(([name, files]) => {
+    const fileCount = files.length;
+    return `
+      <label class="item" title="${esc(name)}" data-provider="project">
+        <input type="checkbox" data-kind="projects" value="${esc(name)}" checked>
+        <span class="name">${esc(name)} <span class="child-badge">${fileCount} file${fileCount === 1 ? '' : 's'}</span></span>
+      </label>`;
+  }).join('');
+
+  return `
+  <div class="group" id="grp-projects">
+    <div class="group-head">
+      <span class="badge" style="--c:var(--orange)">Projects</span>
+      <span class="grp-count" id="cnt-projects"><b>${projectEntries.length}</b>/${projectEntries.length}</span>
+    </div>
+    <div class="group-body">${itemsHtml}</div>
+  </div>`;
+}
+
+function renderProviderSection(
+  provider: { id: string; displayName: string; color: string },
+  agents: string[],
+  skills: string[],
+  agentProviders?: Record<string, string>,
+  skillProviders?: Record<string, string>,
+): string {
+  const safeId = `provider-${provider.id.replace(/[^a-zA-Z0-9]/g, '-')}`;
+  const totalItems = agents.length + skills.length;
+
+  let bodyHtml = '';
+
+  if (agents.length > 0) {
+    bodyHtml += `<div class="sub-group"><div class="sub-group-head"><span class="sub-badge" style="--c:var(--blue)">Agents</span><span class="sub-count">${agents.length}</span></div>`;
+    bodyHtml += agents.map(n => {
+      const pid = agentProviders?.[n] ?? '';
+      return `
+        <label class="item child-item" title="${esc(n)}" data-provider="${esc(pid)}">
+          <input type="checkbox" data-kind="agents" value="${esc(n)}" data-parent-provider="${esc(provider.id)}" checked>
+          <span class="name">${esc(n)}${renderProviderBadge(pid)}</span>
+        </label>`;
+    }).join('');
+    bodyHtml += '</div>';
+  }
+
+  if (skills.length > 0) {
+    bodyHtml += `<div class="sub-group"><div class="sub-group-head"><span class="sub-badge" style="--c:var(--purple)">Skills</span><span class="sub-count">${skills.length}</span></div>`;
+    bodyHtml += skills.map(n => {
+      const pid = skillProviders?.[n] ?? '';
+      return `
+        <label class="item child-item" title="${esc(n)}" data-provider="${esc(pid)}">
+          <input type="checkbox" data-kind="skills" value="${esc(n)}" data-parent-provider="${esc(provider.id)}" checked>
+          <span class="name">${esc(n)}${renderProviderBadge(pid)}</span>
+        </label>`;
+    }).join('');
+    bodyHtml += '</div>';
+  }
+
+  if (!bodyHtml) {
+    bodyHtml = `<div class="empty">No agents or skills for this provider</div>`;
+  }
+
+  return `
+  <div class="group provider-group" id="grp-${safeId}">
+    <div class="group-head">
+      <span class="badge" style="--c:${esc(provider.color)}">${esc(provider.displayName)}</span>
+      <span class="grp-count" id="cnt-${safeId}"><b>${totalItems}</b>/${totalItems}</span>
+      ${totalItems > 0 ? `<button class="toggle-btn" onclick="toggleGroup('${safeId}')">toggle all</button>` : ''}
+    </div>
+    <div class="group-body">${bodyHtml}</div>
+  </div>`;
+}
+
 function buildHtml(
   items: UiItems,
   action: 'push' | 'pull',
@@ -330,15 +404,29 @@ function buildHtml(
   const actionVerb  = action === 'push' ? 'push'           : 'pull';
   const itemsJson   = JSON.stringify(items);
 
-  const groups = [
-    // New: Providers first
-    renderProvidersGroup(providers),
-    ...(items.aiProviders && items.aiProviders.length > 0 ? [renderGroup('aiProviders', 'AI Providers', 'var(--orange)', items.aiProviders)] : []),
-    renderGroup('agents',  'Agents',       'var(--blue)',    items.agents,  items.agentProviders),
-    renderGroup('skills',  'Skills',       'var(--purple)',  items.skills,  items.skillProviders),
-    renderGroup('mcps',    'MCP Servers',  'var(--green)',   items.mcps),
-    ...(items.plugins && items.plugins.length > 0 ? [renderGroup('plugins', 'Plugins', 'var(--yellow)', items.plugins)] : []),
-  ].join('');
+  const groups: string[] = [];
+
+  // Projects
+  if (items.projects && Object.keys(items.projects).length > 0) {
+    groups.push(renderProjectsGroup(items.projects));
+  }
+
+  // Providers with nested agents/skills
+  if (providers && providers.length > 0) {
+    for (const provider of providers) {
+      const providerAgents = items.agents.filter(a => items.agentProviders?.[a] === provider.id);
+      const providerSkills = items.skills.filter(s => items.skillProviders?.[s] === provider.id);
+      groups.push(renderProviderSection(provider, providerAgents, providerSkills, items.agentProviders, items.skillProviders));
+    }
+  }
+
+  // MCP Servers (shared across all providers)
+  groups.push(renderGroup('mcps', 'MCP Servers', 'var(--green)', items.mcps));
+
+  // Plugins
+  if (items.plugins && items.plugins.length > 0) {
+    groups.push(renderGroup('plugins', 'Plugins', 'var(--yellow)', items.plugins));
+  }
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -393,6 +481,12 @@ main{flex:1;padding:24px 32px;max-width:760px;width:100%;margin:0 auto;display:f
 .provider-copilot{background:rgba(139,148,158,.15);color:#8b949e}
 .provider-gemini{background:rgba(167,139,250,.15);color:#a78bfa}
 .provider-opencode{background:rgba(251,133,0,.14);color:#fb8500}
+.provider-group{border-left:3px solid var(--c)}
+.sub-group{border-top:1px solid rgba(255,255,255,.04)}
+.sub-group:first-child{border-top:none}
+.sub-group-head{display:flex;align-items:center;gap:8px;padding:6px 14px 2px}
+.sub-badge{font-size:10px;font-weight:600;padding:1px 6px;border-radius:3px;background:color-mix(in srgb,var(--c) 18%,transparent);color:var(--c)}
+.sub-count{font-size:10px;color:var(--muted);margin-left:auto}
 
 /* collapsible directories */
 .dir-group{border-bottom:1px solid rgba(255,255,255,.04)}
@@ -504,9 +598,11 @@ function countFor(kind){
 }
 function updateCounts(){
   let total=0,sel=0;
-  const kinds=['providers','aiProviders','agents','skills','mcps'];
-  if(!ITEMS.providers) kinds.shift();
-  if(!ITEMS.aiProviders) kinds.shift();
+  const kinds=[];
+  if(ITEMS.projects) kinds.push('projects');
+  if(ITEMS.providers) kinds.push('providers');
+  if(ITEMS.aiProviders) kinds.push('aiProviders');
+  kinds.push('agents','skills','mcps');
   if(ITEMS.plugins) kinds.push('plugins');
   kinds.forEach(k=>{
     const all=ITEMS[k]?.length || 0, s=countFor(k);
@@ -560,6 +656,10 @@ document.addEventListener('change',function(e){
 async function submitSel(){
   const sel={agents:[],skills:[],mcps:[]};
   const kinds=['agents','skills','mcps'];
+  if(ITEMS.projects) {
+    sel.projects=[];
+    kinds.unshift('projects');
+  }
   if(ITEMS.aiProviders) {
     sel.aiProviders=[];
     kinds.unshift('aiProviders');

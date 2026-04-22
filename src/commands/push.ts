@@ -16,7 +16,7 @@ import { promptForItemSelection, promptForTwoStepSelection, type ItemFilters } f
 import { openSelectionUi } from './ui-server.js';
 import { askSecret, ask } from '../utils/prompt.js';
 import { readProjectConfig, copyProjectFilesToPocket } from '../sync/project.js';
-import { sparkle, celebrate, section, stat, oops, heads_up, WITTY, c } from '../utils/sparkle.js';
+import { sparkle, celebrate, section, stat, oops, heads_up, WITTY, c, subItem, providerHeader } from '../utils/sparkle.js';
 
 interface AssetSyncSummary {
   manifestCount: number;
@@ -84,7 +84,7 @@ export async function pushCommand(
   if (options.ui) {
     const aiProviders = selection.selected.map((p) => p.displayName);
     filters = await openSelectionUi(
-      { agents: allAgentNames, skills: allSkillNames, mcps: allMcpNames, plugins: allPluginPaths, aiProviders, agentProviders, skillProviders, providers: PROVIDER_UI_METADATA },
+      { agents: allAgentNames, skills: allSkillNames, mcps: allMcpNames, plugins: allPluginPaths, aiProviders, agentProviders, skillProviders, providers: PROVIDER_UI_METADATA, projects: config.projects },
       'push',
     );
   } else if (options.interactive) {
@@ -159,11 +159,12 @@ export async function pushCommand(
 
   section('Summary');
   stat('Storage', config.storageType === 'gist' ? `gist (${config.gistUrl})` : `repo (${config.repoHtmlUrl})`);
-  stat('Providers', formatProviderList(selection.selected));
-  stat('MCPs', serverCount.toString());
-  stat('Plugins', `${assetSummary.manifestCount} manifest file(s)`);
-  stat('Agents', assetSummary.agentResult.synced.toString());
-  stat('Skills', assetSummary.skillResult.synced.toString());
+
+  subItem('Providers', { value: formatProviderList(selection.selected) });
+  subItem('MCPs', { check: serverCount > 0, value: `${serverCount} server(s)` });
+  subItem('Agents', { check: assetSummary.agentResult.synced > 0, value: `${assetSummary.agentResult.synced} file(s)` });
+  subItem('Skills', { check: assetSummary.skillResult.synced > 0, value: `${assetSummary.skillResult.synced} file(s)` });
+  subItem('Plugins', { check: assetSummary.manifestCount > 0, value: `${assetSummary.manifestCount} manifest(s)` });
   console.log('');
 }
 

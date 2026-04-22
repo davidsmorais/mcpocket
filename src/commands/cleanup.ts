@@ -6,7 +6,8 @@ import { pullRepo, commitAndPush, ensureGitConfig } from '../storage/github.js';
 import { fetchGist, writeGistFilesToDir, collectFilesFromDir, updateGist } from '../storage/gist.js';
 import { listPocketMcpServerNames } from '../sync/mcp.js';
 import { ask, askMultiSelect } from '../utils/prompt.js';
-import { sparkle, celebrate, section, stat, oops, heads_up, c } from '../utils/sparkle.js';
+import { sparkle, celebrate, section, stat, oops, heads_up, c, subItem, providerHeader } from '../utils/sparkle.js';
+import { ALL_PROVIDERS } from '../clients/providers.js';
 
 export interface CleanupOptions {
   local?: boolean;
@@ -16,11 +17,12 @@ export interface CleanupOptions {
 
 // ── Pocket item model ─────────────────────────────────────────────────────────
 
-type PocketItemKind = 'agent' | 'skill' | 'mcp' | 'other';
+type PocketItemKind = 'agent' | 'skill' | 'mcp' | 'project' | 'other';
 
 interface PocketItem {
   kind: PocketItemKind;
   name: string;
+  provider?: string;
   /** Raw pocket-relative file paths covered by this item. Empty for 'mcp' (handled separately). */
   files: string[];
 }
@@ -199,13 +201,16 @@ async function localCleanup(
 /**
  * Build a list of logical pocket items from raw file paths.
  *
- * - agents/foo.md           → { kind: 'agent', name: 'foo' }
- * - skills/my-skill/...     → { kind: 'skill', name: 'my-skill' } (all files grouped)
- * - mcp-config.json         → one { kind: 'mcp' } item per server key (read without decrypting)
- * - everything else         → { kind: 'other', name: <rel-path> }
+ * - agents/<provider>/foo.md  → { kind: 'agent', name: 'foo', provider: '<provider>' }
+ * - skills/<provider>/my-skill/... → { kind: 'skill', name: 'my-skill', provider: '<provider>' }
+ * - mcp-config.json           → one { kind: 'mcp' } item per server key
+ * - projects/<name>/...       → { kind: 'project', name: '<name>' }
+ * - everything else           → { kind: 'other', name: <rel-path> }
  */
 export function buildPocketItems(repoDir: string, allFiles: string[]): PocketItem[] {
   const items: PocketItem[] = [];
+
+  const validProviderIds = new Set<string>(ALL_PROVIDERS.map(p => p.id));
 
   // Expand mcp-config.json into individual MCP server items
   let mcpHandled = false;
@@ -219,40 +224,67 @@ export function buildPocketItems(repoDir: string, allFiles: string[]): PocketIte
     }
   }
 
-  // Group agents and skills; pass everything else through as 'other'
-  const agentsByName = new Map<string, string[]>();
-  const skillsByName = new Map<string, string[]>();
+  // Group agents by provider and name; group skills by provider and name
+  const agentsByProviderAndName = new Map<string, Map<string, string[]>>();
+  const skillsByProviderAndName = new Map<string, Map<string, string[]>>();
+  const projectsByName = new Map<string, string[]>();
 
   for (const f of allFiles) {
     if (f.startsWith('agents/')) {
-      const name = path.basename(f, '.md');
-      if (!agentsByName.has(name)) agentsByName.set(name, []);
-      agentsByName.get(name)!.push(f);
+      const parts = f.split('/');
+      const provider = parts[1];
+      if (provider && validProviderIds.has(provider)) {
+        const name = path.basename(f, '.md');
+        if (!agentsByProviderAndName.has(provider)) agentsByProviderAndName.set(provider, new Map());
+        const nameMap = agentsByProviderAndName.get(provider)!;
+        if (!nameMap.has(name)) nameMap.set(name, []);
+        nameMap.get(name)!.push(f);
+      }
     } else if (f.startsWith('skills/')) {
       const parts = f.split('/');
-      const topLevel = parts[1];
-      if (topLevel) {
-        if (!skillsByName.has(topLevel)) skillsByName.set(topLevel, []);
-        skillsByName.get(topLevel)!.push(f);
+      const provider = parts[1];
+      if (provider && validProviderIds.has(provider)) {
+        const skillName = parts[2];
+        if (skillName) {
+          if (!skillsByProviderAndName.has(provider)) skillsByProviderAndName.set(provider, new Map());
+          const nameMap = skillsByProviderAndName.get(provider)!;
+          if (!nameMap.has(skillName)) nameMap.set(skillName, []);
+          nameMap.get(skillName)!.push(f);
+        }
+      }
+    } else if (f.startsWith('projects/')) {
+      const parts = f.split('/');
+      const projName = parts[1];
+      if (projName) {
+        if (!projectsByName.has(projName)) projectsByName.set(projName, []);
+        projectsByName.get(projName)!.push(f);
       }
     } else if (f === 'mcp-config.json' && mcpHandled) {
-      // Already expanded above — skip raw file entry
+      // Already expanded above
     } else {
       items.push({ kind: 'other', name: f, files: [f] });
     }
   }
 
-  for (const [name, files] of agentsByName) {
-    items.push({ kind: 'agent', name, files });
+  for (const [provider, nameMap] of agentsByProviderAndName) {
+    for (const [name, files] of nameMap) {
+      items.push({ kind: 'agent', name, provider, files });
+    }
   }
-  for (const [name, files] of skillsByName) {
-    items.push({ kind: 'skill', name, files });
+  for (const [provider, nameMap] of skillsByProviderAndName) {
+    for (const [name, files] of nameMap) {
+      items.push({ kind: 'skill', name, provider, files });
+    }
+  }
+  for (const [name, files] of projectsByName) {
+    items.push({ kind: 'project', name, files });
   }
 
-  // Sort: agents → skills → MCPs → other; alphabetical within each group
-  const kindOrder: Record<PocketItemKind, number> = { agent: 0, skill: 1, mcp: 2, other: 3 };
+  const kindOrder: Record<PocketItemKind, number> = { project: 0, agent: 1, skill: 2, mcp: 3, other: 4 };
   items.sort((a, b) => {
     if (kindOrder[a.kind] !== kindOrder[b.kind]) return kindOrder[a.kind] - kindOrder[b.kind];
+    const providerCompare = (a.provider || '').localeCompare(b.provider || '');
+    if (providerCompare !== 0) return providerCompare;
     return a.name.localeCompare(b.name);
   });
 
@@ -313,20 +345,44 @@ function deletePocketItemFiles(repoDir: string, items: PocketItem[]): DeletionRe
 }
 
 const KIND_LABEL: Record<PocketItemKind, string> = {
-  agent: '[agent]',
-  skill: '[skill]',
-  mcp:   '[mcp]  ',
-  other: '[other]',
+  project: '[project]',
+  agent:   '[agent] ',
+  skill:   '[skill] ',
+  mcp:     '[mcp]   ',
+  other:   '[other] ',
 };
 
 function formatItemLabel(item: PocketItem): string {
-  return `${KIND_LABEL[item.kind]}  ${item.name}`;
+  const providerTag = item.provider ? c.dim(` [${item.provider}]`) : '';
+  return `${KIND_LABEL[item.kind]}  ${item.name}${providerTag}`;
 }
 
 function printItemsToDelete(items: PocketItem[]): void {
   section('Items to be removed');
+
+  const byProvider = new Map<string, PocketItem[]>();
+  const noProvider: PocketItem[] = [];
+
   for (const item of items) {
-    console.log(`    ${c.red('✗')} ${formatItemLabel(item)}`);
+    if (item.provider) {
+      if (!byProvider.has(item.provider)) byProvider.set(item.provider, []);
+      byProvider.get(item.provider)!.push(item);
+    } else {
+      noProvider.push(item);
+    }
+  }
+
+  for (const [provider, providerItems] of byProvider) {
+    providerHeader(provider);
+    for (const item of providerItems) {
+      console.log(`      ${c.red('✗')} ${formatItemLabel(item)}`);
+    }
+  }
+
+  if (noProvider.length > 0) {
+    for (const item of noProvider) {
+      console.log(`    ${c.red('✗')} ${formatItemLabel(item)}`);
+    }
   }
 }
 

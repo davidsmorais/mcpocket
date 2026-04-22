@@ -109,6 +109,32 @@ export function stat(label: string, value: string | number): void {
 }
 
 /**
+ * Print a hierarchical sub-item (indented under a parent section).
+ * Supports optional checkmark prefix and value suffix.
+ */
+export function subItem(label: string, options: { check?: boolean; value?: string; muted?: boolean } = {}): void {
+  const prefix = options.check === true ? c.green('✓') : options.check === false ? c.red('✗') : ' ';
+  const valueStr = options.value ? `  ${c.bold(options.value)}` : '';
+  const labelStr = options.muted ? c.dim(label) : label;
+  console.log(`      ${prefix} ${labelStr}${valueStr}`);
+}
+
+/**
+ * Print a provider header in hierarchical display.
+ */
+export function providerHeader(name: string): void {
+  console.log(`    ${c.cyan('▸')} ${c.bold(name)}`);
+}
+
+/**
+ * Print a project header in hierarchical display.
+ */
+export function projectHeader(name: string, fileCount?: number): void {
+  const count = fileCount !== undefined ? `  ${c.dim(`(${fileCount} file${fileCount === 1 ? '' : 's'})`)}` : '';
+  console.log(`    ${c.yellow('▸')} ${c.bold(name)}${count}`);
+}
+
+/**
  * Print a warm, friendly error — problems happen, we're chill about it.
  */
 export function oops(message: string): void {

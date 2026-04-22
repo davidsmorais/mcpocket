@@ -16,7 +16,7 @@ import { promptForItemSelection, promptForTwoStepSelection, type ItemFilters } f
 import { openSelectionUi } from './ui-server.js';
 import { askSecret, askSingleSelect } from '../utils/prompt.js';
 import { copyProjectFilesFromPocket } from '../sync/project.js';
-import { sparkle, celebrate, section, stat, oops, heads_up, WITTY, c } from '../utils/sparkle.js';
+import { sparkle, celebrate, section, stat, oops, heads_up, WITTY, c, subItem } from '../utils/sparkle.js';
 
 interface RestoredAssetSummary {
   updatedManifests: string[];
@@ -64,7 +64,7 @@ export async function pullCommand(
   if (options.ui) {
     const aiProviders = selection.selected.map((p) => p.displayName);
     filters = await openSelectionUi(
-      { agents: allAgentNames, skills: allSkillNames, mcps: allMcpNames, aiProviders, providers: PROVIDER_UI_METADATA },
+      { agents: allAgentNames, skills: allSkillNames, mcps: allMcpNames, aiProviders, providers: PROVIDER_UI_METADATA, projects: config.projects },
       'pull',
     );
   } else if (options.interactive) {
@@ -132,11 +132,11 @@ export async function pullCommand(
   celebrate(WITTY.pullDone);
 
   section('Summary');
-  stat('Providers', formatProviderList(selection.selected));
-  stat('MCPs', `${serverCount} servers → ${updatedClients.length} client(s)`);
-  stat('Plugins', `${restoredAssets.updatedManifests.length} manifest file(s)`);
-  stat('Agents', restoredAssets.agentResult.synced.toString());
-  stat('Skills', restoredAssets.skillResult.synced.toString());
+  subItem('Providers', { value: formatProviderList(selection.selected) });
+  subItem('MCPs', { check: serverCount > 0, value: `${serverCount} server(s) → ${updatedClients.length} client(s)` });
+  subItem('Agents', { check: restoredAssets.agentResult.synced > 0, value: `${restoredAssets.agentResult.synced} file(s)` });
+  subItem('Skills', { check: restoredAssets.skillResult.synced > 0, value: `${restoredAssets.skillResult.synced} file(s)` });
+  subItem('Plugins', { check: restoredAssets.updatedManifests.length > 0, value: `${restoredAssets.updatedManifests.length} manifest(s)` });
 
   if (updatedClients.length > 0) {
     console.log(`\n  ${c.bold('Updated clients:')}`);
