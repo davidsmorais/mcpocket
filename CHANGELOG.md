@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.6.13] - 2026-04-22
+
+### Added
+- New `-e, --exclude` flag for push and pull commands to open a browser UI to select items to EXCLUDE from sync (inverse of the default include filter UI).
+
+### Fixed
+- Interactive multi-select now uses viewport-based rendering for large lists, with PageUp/PageDown, Home/End, and g/s shortcuts to toggle all agents/skills.
+
 ## [0.6.9] - 2026-04-22
 
 ### Added
