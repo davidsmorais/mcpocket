@@ -17,8 +17,8 @@ export function readGeminiCliMcpServers(): McpServersMap {
   try {
     const settings: GeminiCliSettings = JSON.parse(fs.readFileSync(configPath, 'utf8'));
     return settings.mcpServers ?? {};
-  } catch {
-    console.warn(`[mcpocket] Could not read Gemini CLI settings at ${configPath}`);
+  } catch (err) {
+    console.warn(`[mcpocket] Could not read Gemini CLI settings at ${configPath}: ${(err as Error).message}`);
     return {};
   }
 }
@@ -31,8 +31,8 @@ export function writeGeminiCliMcpServers(servers: McpServersMap): void {
   if (fs.existsSync(configPath)) {
     try {
       settings = JSON.parse(fs.readFileSync(configPath, 'utf8'));
-    } catch {
-      console.warn(`[mcpocket] Could not parse existing Gemini CLI settings, will overwrite mcpServers only`);
+    } catch (err) {
+      console.warn(`[mcpocket] Could not parse existing Gemini CLI settings (${(err as Error).message}), will overwrite mcpServers only`);
     }
   } else {
     fs.mkdirSync(dir, { recursive: true });
