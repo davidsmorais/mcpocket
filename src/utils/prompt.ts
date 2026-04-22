@@ -46,23 +46,34 @@ export async function askMultiSelect<T>(
   // Start with everything selected — user deselects what they don't want.
   const selected = new Set<number>(options.map((_, i) => i));
   let cursor = 0;
+  let offset = 0;
   let initialRender = true;
+  let lastBlockLines = 0;
 
-  // question line + one line per option + hint line
-  const BLOCK_LINES = options.length + 2;
+  const computeViewportSize = (): number => {
+    const rows = (process.stdout as any).rows ?? 24;
+    return Math.max(1, rows - 2);
+  };
+
+  // (viewport-based rendering; dynamic height)
 
   function render(): void {
+    const viewportSize = computeViewportSize();
+    const firstIndex = offset;
+    const lastIndex = Math.min(offset + viewportSize, options.length);
+    const visibleCount = Math.max(0, lastIndex - firstIndex);
+
     if (!initialRender) {
       // Jump back to the first line of our block
-      process.stdout.write(`\x1b[${BLOCK_LINES}F`);
+      process.stdout.write(`\x1b[${lastBlockLines}F`);
     }
     initialRender = false;
 
     // Question
     process.stdout.write(`\x1b[2K  ${question}\n`);
 
-    // Options
-    for (let i = 0; i < options.length; i++) {
+    // Visible options
+    for (let i = firstIndex; i < lastIndex; i++) {
       const isActive   = i === cursor;
       const isSelected = selected.has(i);
       const pointer    = isActive   ? c.cyan('❯') : ' ';
@@ -71,10 +82,18 @@ export async function askMultiSelect<T>(
       process.stdout.write(`\x1b[2K  ${pointer} ${checkbox} ${label}\n`);
     }
 
+    // Fill remaining lines in the viewport with blanks to avoid artifacts
+    for (let j = visibleCount; j < viewportSize; j++) {
+      process.stdout.write('\x1b[2K\n');
+    }
+
     // Hint
     process.stdout.write(
-      `\x1b[2K${c.dim('  ↑↓ navigate   space toggle   a toggle all   enter confirm')}\n`,
+      `\x1b[2K${c.dim('  ↑/↓ navigate   PageUp/PageDown   Home/End   space toggle   a toggle all   g agents   s skills   Enter confirm')}\n`,
     );
+
+    // Track block height for next render (full block height is viewportSize + 2 lines)
+    lastBlockLines = viewportSize + 2;
   }
 
   // Hide cursor while navigating
@@ -131,18 +150,101 @@ export async function askMultiSelect<T>(
         return;
       }
 
-      // Arrow up or k — move cursor up (wraps)
-      if (key === '\x1b[A' || key === 'k') {
-        cursor = (cursor - 1 + options.length) % options.length;
+      // g / G — toggle all agents (items with [agent] in label)
+      if (key === 'g' || key === 'G') {
+        const agentIndices = options
+          .map((opt, i) => opt.label.includes('[agent]') ? i : -1)
+          .filter((i) => i >= 0);
+        if (agentIndices.length === 0) return;
+        const allSelected = agentIndices.every((i) => selected.has(i));
+        if (allSelected) {
+          agentIndices.forEach((i) => selected.delete(i));
+        } else {
+          agentIndices.forEach((i) => selected.add(i));
+        }
         render();
         return;
       }
 
-      // Arrow down or j — move cursor down (wraps)
-      if (key === '\x1b[B' || key === 'j') {
-        cursor = (cursor + 1) % options.length;
+      // s / S — toggle all skills (items with [skill] in label)
+      if (key === 's' || key === 'S') {
+        const skillIndices = options
+          .map((opt, i) => opt.label.includes('[skill]') ? i : -1)
+          .filter((i) => i >= 0);
+        if (skillIndices.length === 0) return;
+        const allSelected = skillIndices.every((i) => selected.has(i));
+        if (allSelected) {
+          skillIndices.forEach((i) => selected.delete(i));
+        } else {
+          skillIndices.forEach((i) => selected.add(i));
+        }
         render();
         return;
+      }
+
+      // Arrow up or k — move cursor up
+      if (key === '\x1b[A' || key === 'k') {
+        if (cursor > 0) {
+          cursor--;
+          if (cursor < offset) offset = cursor;
+          render();
+        }
+        return;
+      }
+
+      // Arrow down or j — move cursor down
+      if (key === '\x1b[B' || key === 'j') {
+        if (cursor < options.length - 1) {
+          const viewportSize = computeViewportSize();
+          const bottomIndex = offset + viewportSize - 1;
+          if (cursor < bottomIndex) {
+            cursor++;
+          } else if (offset + viewportSize < options.length) {
+            offset += viewportSize;
+            const vp = computeViewportSize();
+            if (offset > options.length - vp) offset = Math.max(0, options.length - vp);
+            cursor = offset; // first item of new viewport
+          } else {
+            cursor = Math.min(cursor + 1, options.length - 1);
+          }
+          const vp = computeViewportSize();
+          if (cursor < offset) cursor = offset;
+          if (cursor >= offset + vp) cursor = offset + vp - 1;
+          render();
+        }
+        return;
+      }
+
+      // Page Up / Page Down
+      if (key === '\x1b[5~') {
+        const vp = computeViewportSize();
+        if (offset > 0) {
+          offset = Math.max(0, offset - vp);
+          cursor = offset;
+          render();
+        }
+        return;
+      }
+      if (key === '\x1b[6~') {
+        const vp = computeViewportSize();
+        if (offset + vp < options.length) {
+          offset = Math.min(offset + vp, Math.max(0, options.length - vp));
+          cursor = offset;
+          render();
+        }
+        return;
+      }
+
+      // Home / End – jump to first / last page
+      if (key === '\x1b[H') {
+        offset = 0; cursor = 0; render(); return; // Home
+      }
+      if (key === '\x1b[F') {
+        const vp = computeViewportSize();
+        offset = Math.max(0, options.length - vp);
+        cursor = offset;
+        render();
+        return; // End
       }
     }
 

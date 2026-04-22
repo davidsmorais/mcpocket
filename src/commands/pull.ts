@@ -12,7 +12,7 @@ import { applyAgentsFromRepo, listRepoAgentNames, listRepoAgentsWithProviders } 
 import { applySkillsFromRepo, listRepoSkillNames, listRepoSkillsWithProviders } from '../sync/skills.js';
 import { formatProviderList, resolveProviderSelection, PROVIDER_UI_METADATA } from './provider-options.js';
 import type { ProviderFlagOptions } from './provider-options.js';
-import { promptForItemSelection, promptForTwoStepSelection, type ItemFilters } from './item-select.js';
+import { promptForItemSelection, promptForTwoStepSelection, type ItemFilters, type SyncItemKind } from './item-select.js';
 import { openSelectionUi, openRoutingUi } from './ui-server.js';
 import type { FileRoutingMap, RoutingEntry } from '../sync/routing.js';
 import { buildRoutingMap } from '../sync/routing.js';
@@ -27,7 +27,7 @@ interface RestoredAssetSummary {
 }
 
 export async function pullCommand(
-  options: ProviderFlagOptions & { interactive?: boolean; ui?: boolean; route?: boolean; project?: boolean } = {},
+  options: ProviderFlagOptions & { interactive?: boolean; ui?: boolean; exclude?: boolean; route?: boolean; project?: boolean } = {},
 ): Promise<void> {
   const config = readConfig();
   const repoDir = getLocalRepoDir();
@@ -76,11 +76,12 @@ export async function pullCommand(
 
   let filters: ItemFilters = {};
 
-  if (options.ui) {
+  if (options.ui || options.exclude) {
     const aiProviders = selection.selected.map((p) => p.displayName);
     filters = await openSelectionUi(
       { agents: allAgentNames, skills: allSkillNames, mcps: allMcpNames, aiProviders, agentProviders, skillProviders, providers: PROVIDER_UI_METADATA, projects: config.projects },
       'pull',
+      options.exclude,
     );
   } else if (options.interactive) {
     filters = await promptForTwoStepSelection(
@@ -101,10 +102,13 @@ export async function pullCommand(
     if (!hasMcpConfig) {
       heads_up('No MCP config found in the pocket yet. Run `mcpocket push` on your source machine first!');
     } else {
-      // Only decrypt if at least one MCP is selected
-      const mcpsSelected = !filters.mcpNames || filters.mcpNames.size > 0;
+      const excludedMcps = filters.excludeNames?.get('mcp');
+      const hasInclusionFilter = filters.mcpNames && filters.mcpNames.size > 0;
+      const hasExclusionFilter = excludedMcps && excludedMcps.size > 0;
 
-      if (mcpsSelected) {
+      const shouldProcessMcps = !filters.mcpNames || hasInclusionFilter || hasExclusionFilter;
+
+      if (shouldProcessMcps) {
         const passphrase = await promptForPullPassphrase();
         sparkle(WITTY.decrypting);
 
@@ -117,9 +121,14 @@ export async function pullCommand(
           process.exit(1);
         }
 
-        const serversToApply = filters.mcpNames
-          ? filterMap(remoteServers, filters.mcpNames)
-          : remoteServers;
+        let serversToApply: McpServersMap;
+        if (excludedMcps) {
+          serversToApply = filterMap(remoteServers, excludedMcps, true);
+        } else if (filters.mcpNames) {
+          serversToApply = filterMap(remoteServers, filters.mcpNames);
+        } else {
+          serversToApply = remoteServers;
+        }
 
         serverCount    = Object.keys(serversToApply).length;
         updatedClients = applyServersToProviders(selection.selected, serversToApply);
@@ -440,10 +449,13 @@ function restoreClaudeHomeAssetsFromPocket(
 function filterMap<V>(
   map: Record<string, V>,
   allowedKeys: ReadonlySet<string>,
+  exclude = false,
 ): Record<string, V> {
   const result: Record<string, V> = {};
   for (const [key, val] of Object.entries(map)) {
-    if (allowedKeys.has(key)) result[key] = val;
+    if (exclude ? !allowedKeys.has(key) : allowedKeys.has(key)) {
+      result[key] = val;
+    }
   }
   return result;
 }

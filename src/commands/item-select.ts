@@ -9,10 +9,6 @@ export interface SyncItem {
   name: string;
 }
 
-/**
- * Filters for individual item-level sync selection.
- * `undefined` means "all items in that category" (no filtering applied).
- */
 export interface ItemFilters {
   aiProviderNames?: ReadonlySet<string>;
   mcpNames?: ReadonlySet<string>;
@@ -20,6 +16,7 @@ export interface ItemFilters {
   skillNames?: ReadonlySet<string>;
   pluginNames?: ReadonlySet<string>;
   selectedProviders?: ReadonlySet<string>;
+  excludeNames?: ReadonlyMap<SyncItemKind, ReadonlySet<string>>;
 }
 
 const KIND_LABEL: Record<SyncItemKind, string> = {

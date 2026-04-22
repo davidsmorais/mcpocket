@@ -12,7 +12,7 @@ import { writeSkillsToRepo, listLocalSkillsWithProviders } from '../sync/skills.
 import { prunePocketDir } from '../sync/pocket.js';
 import { formatProviderList, resolveProviderSelection, PROVIDER_UI_METADATA } from './provider-options.js';
 import type { ProviderFlagOptions } from './provider-options.js';
-import { promptForItemSelection, promptForTwoStepSelection, type ItemFilters } from './item-select.js';
+import { promptForItemSelection, promptForTwoStepSelection, type ItemFilters, type SyncItemKind } from './item-select.js';
 import { openSelectionUi } from './ui-server.js';
 import { askSecret, ask } from '../utils/prompt.js';
 import { readProjectConfig, copyProjectFilesToPocket } from '../sync/project.js';
@@ -26,7 +26,7 @@ interface AssetSyncSummary {
 }
 
 export async function pushCommand(
-  options: ProviderFlagOptions & { interactive?: boolean; ui?: boolean; project?: boolean } = {},
+  options: ProviderFlagOptions & { interactive?: boolean; ui?: boolean; exclude?: boolean; project?: boolean } = {},
 ): Promise<void> {
   const config = readConfig();
   const repoDir = getLocalRepoDir();
@@ -81,11 +81,12 @@ export async function pushCommand(
 
   let filters: ItemFilters = {};
 
-  if (options.ui) {
+  if (options.ui || options.exclude) {
     const aiProviders = selection.selected.map((p) => p.displayName);
     filters = await openSelectionUi(
       { agents: allAgentNames, skills: allSkillNames, mcps: allMcpNames, plugins: allPluginPaths, aiProviders, agentProviders, skillProviders, providers: PROVIDER_UI_METADATA, projects: config.projects },
       'push',
+      options.exclude,
     );
   } else if (options.interactive) {
     filters = await promptForTwoStepSelection(
@@ -101,7 +102,12 @@ export async function pushCommand(
 
   let serverCount = 0;
   if (activeCategories.has('mcps')) {
-    const serversToSync = filters.mcpNames ? filterMap(allMcps, filters.mcpNames) : allMcps;
+    const excludedMcps = filters.excludeNames?.get('mcp');
+    const serversToSync = excludedMcps
+      ? filterMap(allMcps, excludedMcps, true)
+      : filters.mcpNames
+        ? filterMap(allMcps, filters.mcpNames)
+        : allMcps;
     serverCount = Object.keys(serversToSync).length;
 
     if (serverCount > 0) {
@@ -274,10 +280,16 @@ function syncClaudeHomeAssetsToPocket(
   return { manifestCount, pluginResult, agentResult, skillResult };
 }
 
-function filterMap<V>(map: Record<string, V>, allowedKeys: ReadonlySet<string>): Record<string, V> {
+function filterMap<V>(
+  map: Record<string, V>,
+  allowedKeys: ReadonlySet<string>,
+  exclude = false,
+): Record<string, V> {
   const result: Record<string, V> = {};
   for (const [key, val] of Object.entries(map)) {
-    if (allowedKeys.has(key)) result[key] = val;
+    if (exclude ? !allowedKeys.has(key) : allowedKeys.has(key)) {
+      result[key] = val;
+    }
   }
   return result;
 }

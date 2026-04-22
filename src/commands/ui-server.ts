@@ -19,8 +19,8 @@ export interface UiItems {
   skillProviders?: Record<string, string>;
   providers?: Array<{ id: string; displayName: string; color: string }>;
   projects?: Record<string, string[]>;
-  /** Raw gist files for per-file routing mode (--route flag) */
   gistFiles?: Record<string, string>;
+  excludeMode?: boolean;
 }
 
 /** Response from the routing UI: per-file routing assignments */
@@ -36,19 +36,20 @@ export interface RoutingSelection {
 export async function openSelectionUi(
   items: UiItems,
   action: 'push' | 'pull',
+  excludeMode = false,
 ): Promise<ItemFilters> {
   return new Promise((resolve, reject) => {
     const server = http.createServer((req, res) => {
       if (req.method === 'GET' && req.url === '/') {
         res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
-        // Pass providers to the HTML builder for rendering and filtering
-        res.end(buildHtml(items, action, items.providers));
+        const uiItems = { ...items, excludeMode };
+        res.end(buildHtml(uiItems, action, items.providers));
         return;
       }
 
       if (req.method === 'GET' && req.url === '/api/items') {
         res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ ...items, action }));
+        res.end(JSON.stringify({ ...items, action, excludeMode }));
         return;
       }
 
@@ -92,7 +93,7 @@ export async function openSelectionUi(
             res.writeHead(200, { 'Content-Type': 'application/json' });
             res.end(JSON.stringify({ ok: true }));
             server.close();
-            resolve(buildFilters(sel, items));
+            resolve(buildFilters(sel, items, excludeMode));
           } catch {
             res.writeHead(400, { 'Content-Type': 'application/json' });
             res.end(JSON.stringify({ error: 'Invalid JSON' }));
@@ -193,19 +194,44 @@ export async function openRoutingUi(
 function buildFilters(
   sel: { agents: string[]; skills: string[]; mcps: string[]; plugins?: string[]; aiProviders?: string[]; providers?: string[]; projects?: string[] },
   available: UiItems,
+  excludeMode = false,
 ): ItemFilters {
   const filters: ItemFilters = {};
-  if (sel.agents.length < available.agents.length) filters.agentNames = new Set(sel.agents);
-  if (sel.skills.length < available.skills.length) filters.skillNames = new Set(sel.skills);
-  if (sel.mcps.length   < available.mcps.length)   filters.mcpNames   = new Set(sel.mcps);
-  if (available.plugins && sel.plugins && sel.plugins.length < available.plugins.length) {
-    filters.pluginNames = new Set(sel.plugins);
-  }
-  if (available.aiProviders && sel.aiProviders && sel.aiProviders.length < available.aiProviders.length) {
-    filters.aiProviderNames = new Set(sel.aiProviders);
-  }
-  if (available.providers && sel.providers && sel.providers.length < available.providers.length) {
-    filters.selectedProviders = new Set(sel.providers);
+
+  if (excludeMode) {
+    const excludeNames = new Map<string, Set<string>>();
+    if (sel.agents.length > 0 && available.agents.length > 0) {
+      const excluded = available.agents.filter(a => sel.agents.includes(a));
+      if (excluded.length > 0) excludeNames.set('agent', new Set(excluded));
+    }
+    if (sel.skills.length > 0 && available.skills.length > 0) {
+      const excluded = available.skills.filter(s => sel.skills.includes(s));
+      if (excluded.length > 0) excludeNames.set('skill', new Set(excluded));
+    }
+    if (sel.mcps.length > 0 && available.mcps.length > 0) {
+      const excluded = available.mcps.filter(m => sel.mcps.includes(m));
+      if (excluded.length > 0) excludeNames.set('mcp', new Set(excluded));
+    }
+    if (sel.plugins && sel.plugins.length > 0 && available.plugins && available.plugins.length > 0) {
+      const excluded = available.plugins.filter(p => sel.plugins!.includes(p));
+      if (excluded.length > 0) excludeNames.set('plugin', new Set(excluded));
+    }
+    if (excludeNames.size > 0) {
+      filters.excludeNames = excludeNames as unknown as ItemFilters['excludeNames'];
+    }
+  } else {
+    if (sel.agents.length < available.agents.length) filters.agentNames = new Set(sel.agents);
+    if (sel.skills.length < available.skills.length) filters.skillNames = new Set(sel.skills);
+    if (sel.mcps.length   < available.mcps.length)   filters.mcpNames   = new Set(sel.mcps);
+    if (available.plugins && sel.plugins && sel.plugins.length < available.plugins.length) {
+      filters.pluginNames = new Set(sel.plugins);
+    }
+    if (available.aiProviders && sel.aiProviders && sel.aiProviders.length < available.aiProviders.length) {
+      filters.aiProviderNames = new Set(sel.aiProviders);
+    }
+    if (available.providers && sel.providers && sel.providers.length < available.providers.length) {
+      filters.selectedProviders = new Set(sel.providers);
+    }
   }
   return filters;
 }
@@ -482,8 +508,12 @@ function buildHtml(
   action: 'push' | 'pull',
   providers?: Array<{ id: string; displayName: string; color: string }>,
 ): string {
+  const { excludeMode } = items;
   const actionLabel = action === 'push' ? 'Push to Pocket' : 'Pull from Pocket';
   const actionVerb  = action === 'push' ? 'push'           : 'pull';
+  const modeLabel = excludeMode ? 'Exclude' : 'Include';
+  const submitLabel = excludeMode ? 'Apply Exclusions' : actionLabel;
+  const subtitleText = excludeMode ? 'Select items to EXCLUDE from sync' : `Select items to ${actionVerb} → pocket`;
   const itemsJson   = JSON.stringify(items);
 
   const groups: string[] = [];
@@ -635,7 +665,7 @@ footer{position:sticky;bottom:0;background:var(--bg);border-top:1px solid var(--
 <header>
   <div>
     <div class="logo"><em>mcp</em><span>pocket</span></div>
-    <div class="subtitle">Select items to ${actionVerb} → pocket</div>
+    <div class="subtitle">${subtitleText}</div>
   </div>
 </header>
 
@@ -674,7 +704,14 @@ footer{position:sticky;bottom:0;background:var(--bg);border-top:1px solid var(--
 
 <script>
 const ITEMS=${itemsJson};
+const EXCLUDE_MODE=${excludeMode};
 let _dupes=[];
+
+if(EXCLUDE_MODE){
+  document.querySelectorAll('input[type="checkbox"]').forEach(cb=>{
+    cb.checked=false;
+  });
+}
 
 function countFor(kind){
   return document.querySelectorAll('[data-kind='+kind+']:checked').length;
@@ -693,8 +730,9 @@ function updateCounts(){
     const el=document.getElementById('cnt-'+k);
     if(el) el.innerHTML='<b>'+s+'</b>/'+all;
   });
+  const modeText = EXCLUDE_MODE ? 'to exclude' : 'selected';
   document.getElementById('summary').innerHTML=
-    '<b>'+sel+'</b> of <b>'+total+'</b> items selected';
+    '<b>'+sel+'</b> of <b>'+total+'</b> items '+modeText;
 }
 
 function toggleGroup(kind){

@@ -31,6 +31,7 @@ program
   .description('Tuck your AI setup into the cloud pocket')
   .option('-i, --interactive', 'Pick specific items to sync (keyboard UI)')
   .option('--ui', 'Open a browser UI on port 3000 to select items to sync')
+  .option('-e, --exclude', 'Open a browser UI to select items to EXCLUDE from sync')
   .option('--project', 'Push project-level files from this directory to your pocket')
 
 for (const provider of PROVIDER_OPTION_FLAGS) {
@@ -47,6 +48,7 @@ program
   .description('Unpack your AI setup from the cloud pocket')
   .option('-i, --interactive', 'Assign each gist file to a destination (project > provider > tool)')
   .option('--ui', 'Open a browser UI to assign each gist file to a destination (project > provider > tool)')
+  .option('-e, --exclude', 'Open a browser UI to select items to EXCLUDE from sync')
   .option('--project', 'Pull project-level files from your pocket to this directory')
 
 for (const provider of PROVIDER_OPTION_FLAGS) {
