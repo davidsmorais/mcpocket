@@ -4,6 +4,8 @@ import type { ItemFilters } from './item-select.js';
 import { sparkle, oops, c } from '../utils/sparkle.js';
 import { findDuplicateAgents, removeAgentFromCopilot } from '../sync/agents.js';
 import { findDuplicateSkills, removeSkillFromGemini } from '../sync/skills.js';
+import type { FileRoutingMap, RoutingEntry, ToolType, RoutingProvider } from '../sync/routing.js';
+import { buildRoutingMap, PROVIDER_SUBDIRS } from '../sync/routing.js';
 
 const PORT = 3000;
 
@@ -17,6 +19,13 @@ export interface UiItems {
   skillProviders?: Record<string, string>;
   providers?: Array<{ id: string; displayName: string; color: string }>;
   projects?: Record<string, string[]>;
+  /** Raw gist files for per-file routing mode (--route flag) */
+  gistFiles?: Record<string, string>;
+}
+
+/** Response from the routing UI: per-file routing assignments */
+export interface RoutingSelection {
+  routingMap: FileRoutingMap;
 }
 
 /**
@@ -110,6 +119,71 @@ export async function openSelectionUi(
       tryOpenBrowser(url);
       sparkle(`UI running at ${c.cyan(url)}`);
       sparkle('Select your items in the browser, then click the sync button…');
+    });
+  });
+}
+
+/**
+ * Start a local HTTP server for per-file routing mode (--route flag).
+ * Shows ALL gist files with per-file Project/Provider/Tool selectors.
+ * Resolves with the updated routing map once the user submits.
+ */
+export async function openRoutingUi(
+  gistFiles: Record<string, string>,
+  projects?: Record<string, string[]>,
+): Promise<FileRoutingMap> {
+  const routingMap = buildRoutingMap(gistFiles);
+
+  return new Promise((resolve, reject) => {
+    const server = http.createServer((req, res) => {
+      if (req.method === 'GET' && req.url === '/') {
+        res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+        res.end(buildRoutingHtml(routingMap, projects));
+        return;
+      }
+
+      if (req.method === 'GET' && req.url === '/api/routing') {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ routingMap, projects }));
+        return;
+      }
+
+      if (req.method === 'POST' && req.url === '/api/route') {
+        let body = '';
+        req.on('data', (chunk: Buffer) => { body += chunk.toString(); });
+        req.on('end', () => {
+          try {
+            const updated: FileRoutingMap = JSON.parse(body);
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ ok: true }));
+            server.close();
+            resolve(updated);
+          } catch {
+            res.writeHead(400, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: 'Invalid JSON' }));
+          }
+        });
+        return;
+      }
+
+      res.writeHead(404);
+      res.end();
+    });
+
+    server.on('error', (err: NodeJS.ErrnoException) => {
+      if (err.code === 'EADDRINUSE') {
+        oops(`Port ${PORT} is already in use. Stop any other process using it and try again.`);
+      } else {
+        oops(err.message);
+      }
+      reject(err);
+    });
+
+    server.listen(PORT, '127.0.0.1', () => {
+      const url = `http://localhost:${PORT}`;
+      tryOpenBrowser(url);
+      sparkle(`Routing UI running at ${c.cyan(url)}`);
+      sparkle('Assign destinations for each file, then click Apply…');
     });
   });
 }
@@ -395,6 +469,14 @@ function renderProviderSection(
   </div>`;
 }
 
+// Map provider IDs to the asset labels used by agents/skills sync modules
+function providerIdToAssetLabel(providerId: string): string {
+  if (providerId === 'claude-code' || providerId === 'claude-desktop') return 'claude';
+  if (providerId === 'copilot-cli') return 'copilot';
+  if (providerId === 'gemini-cli' || providerId === 'antigravity') return 'gemini';
+  return providerId;
+}
+
 function buildHtml(
   items: UiItems,
   action: 'push' | 'pull',
@@ -414,8 +496,9 @@ function buildHtml(
   // Providers with nested agents/skills
   if (providers && providers.length > 0) {
     for (const provider of providers) {
-      const providerAgents = items.agents.filter(a => items.agentProviders?.[a] === provider.id);
-      const providerSkills = items.skills.filter(s => items.skillProviders?.[s] === provider.id);
+      const assetLabel = providerIdToAssetLabel(provider.id);
+      const providerAgents = items.agents.filter(a => items.agentProviders?.[a] === assetLabel);
+      const providerSkills = items.skills.filter(s => items.skillProviders?.[s] === assetLabel);
       groups.push(renderProviderSection(provider, providerAgents, providerSkills, items.agentProviders, items.skillProviders));
     }
   }
@@ -778,6 +861,137 @@ document.getElementById('dedupe-modal').addEventListener('click',function(e){
 });
 
 updateCounts();
+</script>
+</body>
+</html>`;
+}
+
+// ── Routing UI HTML ───────────────────────────────────────────────────────────
+
+function buildRoutingHtml(
+  routingMap: FileRoutingMap,
+  projects?: Record<string, string[]>,
+): string {
+  const entries = Object.values(routingMap);
+  const entriesJson = JSON.stringify(routingMap);
+  const projectsJson = JSON.stringify(projects || {});
+
+  const projectNames = projects ? Object.keys(projects) : [];
+  const allProviders: RoutingProvider[] = ['claude-code', 'claude-desktop', 'opencode', 'copilot-cli', 'cursor', 'codex', 'gemini-cli'];
+  const allTools: ToolType[] = ['agent', 'skill', 'plugin', 'mcp', 'project'];
+
+  const rows = entries.map((entry) => {
+    const safeId = entry.gistKey.replace(/[^a-zA-Z0-9]/g, '-');
+    const projectOptions = ['<option value="">(none)</option>', ...projectNames.map((p) => `<option value="${esc(p)}"${entry.project === p ? ' selected' : ''}>${esc(p)}</option>`)].join('');
+    const providerOptions = ['<option value="">(none)</option>', ...allProviders.map((p) => `<option value="${p}"${entry.provider === p ? ' selected' : ''}>${p}</option>`)].join('');
+    const toolOptions = allTools.map((t) => `<option value="${t}"${entry.tool === t ? ' selected' : ''}>${t}</option>`).join('');
+
+    return `
+    <tr data-gist-key="${esc(entry.gistKey)}">
+      <td class="file-name" title="${esc(entry.gistKey)}">${esc(entry.displayName)}</td>
+      <td><select data-field="project" data-key="${esc(entry.gistKey)}">${projectOptions}</select></td>
+      <td><select data-field="provider" data-key="${esc(entry.gistKey)}">${providerOptions}</select></td>
+      <td><select data-field="tool" data-key="${esc(entry.gistKey)}">${toolOptions}</select></td>
+    </tr>`;
+  }).join('');
+
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>mcpocket — Route Files</title>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#0d1117;--surface:#161b22;--border:#30363d;
+  --text:#e6edf3;--muted:#8b949e;
+  --blue:#58a6ff;--green:#3fb950;--purple:#bc8cff;--yellow:#d29922;--orange:#fb8500;
+  --red:#f85149;
+  --font:'SF Mono','Fira Code','Cascadia Code',ui-monospace,monospace;
+}
+body{font-family:var(--font);background:var(--bg);color:var(--text);min-height:100vh;display:flex;flex-direction:column}
+header{padding:20px 32px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between}
+.logo{font-size:18px;font-weight:700;letter-spacing:-.5px}
+.logo em{color:var(--blue);font-style:normal}
+.logo span{color:var(--purple)}
+.subtitle{font-size:12px;color:var(--muted);margin-top:3px}
+main{flex:1;padding:24px 32px;max-width:1200px;width:100%;margin:0 auto}
+.table-wrap{background:var(--surface);border:1px solid var(--border);border-radius:8px;overflow:auto;max-height:70vh}
+table{width:100%;border-collapse:collapse}
+thead{position:sticky;top:0;background:var(--surface);z-index:1}
+th{padding:10px 14px;text-align:left;font-size:11px;font-weight:600;color:var(--muted);border-bottom:1px solid var(--border);text-transform:uppercase;letter-spacing:.5px}
+td{padding:6px 14px;border-bottom:1px solid rgba(255,255,255,.04);font-size:13px}
+tr:hover{background:rgba(255,255,255,.02)}
+.file-name{font-weight:500;max-width:400px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+select{font-family:var(--font);font-size:12px;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:4px 8px;cursor:pointer}
+select:focus{outline:none;border-color:var(--blue)}
+footer{position:sticky;bottom:0;background:var(--bg);border-top:1px solid var(--border);padding:14px 32px;display:flex;align-items:center;justify-content:space-between;gap:16px}
+.summary{font-size:13px;color:var(--muted)}
+.summary b{color:var(--text)}
+.apply-btn{padding:9px 22px;background:var(--blue);color:#0d1117;border:none;border-radius:6px;font-family:var(--font);font-size:13px;font-weight:700;cursor:pointer;transition:opacity .15s}
+.apply-btn:hover{opacity:.88}
+.apply-btn:disabled{opacity:.35;cursor:default}
+#done{display:none;flex:1;align-items:center;justify-content:center;flex-direction:column;gap:10px;padding:48px}
+#done.show{display:flex}
+.done-icon{font-size:52px}
+.done-msg{font-size:20px;color:var(--green);font-weight:600}
+.done-sub{font-size:13px;color:var(--muted)}
+</style>
+</head>
+<body>
+<header>
+  <div>
+    <div class="logo"><em>mcp</em><span>pocket</span></div>
+    <div class="subtitle">Assign a destination to each file</div>
+  </div>
+</header>
+<main>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>File</th><th>Project</th><th>Provider</th><th>Tool</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
+  </div>
+</main>
+<div id="done">
+  <div class="done-icon">✓</div>
+  <div class="done-msg">Routing applied!</div>
+  <div class="done-sub">Check your terminal to complete the pull.</div>
+</div>
+<footer>
+  <div class="summary" id="summary"><b>${entries.length}</b> files to route</div>
+  <button class="apply-btn" id="apply-btn" onclick="submitRoute()">Apply Routing</button>
+</footer>
+<script>
+const ROUTING=${entriesJson};
+const PROJECTS=${projectsJson};
+
+function submitRoute(){
+  const selects=document.querySelectorAll('select[data-key]');
+  const updated={...ROUTING};
+  selects.forEach(sel=>{
+    const key=sel.dataset.key;
+    const field=sel.dataset.field;
+    if(updated[key]){
+      if(field==='project') updated[key].project=sel.value||undefined;
+      if(field==='provider') updated[key].provider=sel.value||undefined;
+      if(field==='tool') updated[key].tool=sel.value;
+    }
+  });
+  const btn=document.getElementById('apply-btn');
+  btn.disabled=true; btn.textContent='Applying…';
+  fetch('/api/route',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(updated)})
+    .then(()=>{
+      document.querySelector('main').style.display='none';
+      document.querySelector('footer').style.display='none';
+      document.getElementById('done').classList.add('show');
+    })
+    .catch(()=>{
+      btn.disabled=false; btn.textContent='Apply Routing';
+      alert('Could not reach the mcpocket server.');
+    });
+}
 </script>
 </body>
 </html>`;

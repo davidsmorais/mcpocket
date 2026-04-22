@@ -45,8 +45,8 @@ program
 program
   .command('pull')
   .description('Unpack your AI setup from the cloud pocket')
-  .option('-i, --interactive', 'Pick specific items to sync (keyboard UI)')
-  .option('--ui', 'Open a browser UI on port 3000 to select items to sync')
+  .option('-i, --interactive', 'Assign each gist file to a destination (project > provider > tool)')
+  .option('--ui', 'Open a browser UI to assign each gist file to a destination (project > provider > tool)')
   .option('--project', 'Pull project-level files from your pocket to this directory')
 
 for (const provider of PROVIDER_OPTION_FLAGS) {

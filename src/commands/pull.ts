@@ -13,7 +13,9 @@ import { applySkillsFromRepo, listRepoSkillNames, listRepoSkillsWithProviders } 
 import { formatProviderList, resolveProviderSelection, PROVIDER_UI_METADATA } from './provider-options.js';
 import type { ProviderFlagOptions } from './provider-options.js';
 import { promptForItemSelection, promptForTwoStepSelection, type ItemFilters } from './item-select.js';
-import { openSelectionUi } from './ui-server.js';
+import { openSelectionUi, openRoutingUi } from './ui-server.js';
+import type { FileRoutingMap, RoutingEntry } from '../sync/routing.js';
+import { buildRoutingMap } from '../sync/routing.js';
 import { askSecret, askSingleSelect } from '../utils/prompt.js';
 import { copyProjectFilesFromPocket } from '../sync/project.js';
 import { sparkle, celebrate, section, stat, oops, heads_up, WITTY, c, subItem } from '../utils/sparkle.js';
@@ -25,7 +27,7 @@ interface RestoredAssetSummary {
 }
 
 export async function pullCommand(
-  options: ProviderFlagOptions & { interactive?: boolean; ui?: boolean; project?: boolean } = {},
+  options: ProviderFlagOptions & { interactive?: boolean; ui?: boolean; route?: boolean; project?: boolean } = {},
 ): Promise<void> {
   const config = readConfig();
   const repoDir = getLocalRepoDir();
@@ -48,7 +50,14 @@ export async function pullCommand(
   sparkle(WITTY.pulling);
   await syncPocketToLocal(repoDir, config);
 
-  // ── Discover available items from pocket (no passphrase yet) ─────────────
+  // ── Per-file routing mode (--ui or --interactive flags) ─────────────────────
+
+  if (options.ui || options.interactive) {
+    await pullWithRouting(repoDir, config, options.interactive);
+    return;
+  }
+
+  // ── Legacy mode: no flags, pull everything ──────────────────────────────────
 
   const mcpConfigPath = path.join(repoDir, 'mcp-config.json');
   const hasMcpConfig  = activeCategories.has('mcps') && fs.existsSync(mcpConfigPath);
@@ -153,6 +162,156 @@ export async function pullCommand(
     heads_up('Restart affected apps to apply MCP changes.');
   }
   console.log('');
+}
+
+// ── Per-file routing mode ─────────────────────────────────────────────────────
+
+async function pullWithRouting(
+  repoDir: string,
+  config: ReturnType<typeof readConfig>,
+  interactiveMode = false,
+): Promise<void> {
+  // Fetch gist files directly (don't write to dir yet — we route first)
+  let gistFiles: Record<string, string>;
+  if (config.storageType === 'gist') {
+    const result = await fetchGist(resolveToken(config), config.gistId!);
+    gistFiles = result.files;
+  } else {
+    // For repo mode, collect files from the local clone
+    gistFiles = {};
+    collectFilesRecursive(repoDir, '', gistFiles);
+  }
+
+  // Open routing UI or CLI
+  const routingMap: FileRoutingMap = interactiveMode
+    ? await promptForRoutingCLI(gistFiles, config.projects)
+    : await openRoutingUi(gistFiles, config.projects);
+
+  // Write files to their routed destinations
+  celebrate(WITTY.pullDone);
+  section('Routing Summary');
+
+  let routedCount = 0;
+  for (const entry of Object.values(routingMap)) {
+    const content = gistFiles[entry.gistKey];
+    if (!content) continue;
+
+    const dest = computeDestination(entry, repoDir, config);
+    if (!dest) continue;
+
+    fs.mkdirSync(path.dirname(dest), { recursive: true });
+    fs.writeFileSync(dest, content, 'utf8');
+    routedCount++;
+    sparkle(`${c.dim(entry.gistKey)} → ${c.cyan(dest)}`);
+  }
+
+  stat('Files routed', routedCount.toString());
+  console.log('');
+}
+
+function computeDestination(
+  entry: ReturnType<typeof import('../sync/routing.js').buildRoutingMap>[string],
+  repoDir: string,
+  config: ReturnType<typeof readConfig>,
+): string | null {
+  const { tool, provider, project, gistKey } = entry;
+
+  switch (tool) {
+    case 'agent': {
+      if (!provider) return null;
+      const targetDir = provider === 'claude-code' || provider === 'claude-desktop'
+        ? path.join(process.env.HOME || '~', '.claude', 'agents')
+        : provider === 'copilot-cli'
+          ? path.join(process.env.HOME || '~', '.copilot', 'agents')
+          : path.join(process.env.HOME || '~', '.claude', 'agents');
+      // Extract relative path from gist key: agents__claude-code__foo.md → foo.md
+      const parts = gistKey.split('__');
+      const relPath = parts.slice(2).join('/');
+      return path.join(targetDir, relPath);
+    }
+    case 'skill': {
+      if (!provider) return null;
+      const targetDir = provider === 'claude-code' || provider === 'claude-desktop'
+        ? path.join(process.env.HOME || '~', '.claude', 'skills')
+        : provider === 'gemini-cli'
+          ? path.join(process.env.HOME || '~', '.gemini', 'skills')
+          : path.join(process.env.HOME || '~', '.claude', 'skills');
+      const parts = gistKey.split('__');
+      const relPath = parts.slice(2).join('/');
+      return path.join(targetDir, relPath);
+    }
+    case 'plugin': {
+      const targetDir = path.join(process.env.HOME || '~', '.claude', 'plugins');
+      const parts = gistKey.split('__');
+      const relPath = parts.slice(1).join('/');
+      return path.join(targetDir, relPath);
+    }
+    case 'mcp': {
+      // MCP config goes to the repo dir for later processing
+      return path.join(repoDir, 'mcp-config.json');
+    }
+    case 'project': {
+      if (!project) return null;
+      // Project files go to the current working directory
+      const parts = gistKey.split('__');
+      const relPath = parts.slice(1).join('/');
+      return path.join(process.cwd(), relPath);
+    }
+    default:
+      return null;
+  }
+}
+
+function collectFilesRecursive(dir: string, prefix: string, files: Record<string, string>): void {
+  if (!fs.existsSync(dir)) return;
+  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+    if (entry.name === '.git') continue;
+    const key = prefix ? `${prefix}__${entry.name}` : entry.name;
+    const fullPath = path.join(dir, entry.name);
+    if (entry.isDirectory()) {
+      collectFilesRecursive(fullPath, key, files);
+    } else if (entry.isFile()) {
+      files[key] = fs.readFileSync(fullPath, 'utf8');
+    }
+  }
+}
+
+async function promptForRoutingCLI(
+  gistFiles: Record<string, string>,
+  projects?: Record<string, string[]>,
+): Promise<FileRoutingMap> {
+  const routingMap = buildRoutingMap(gistFiles);
+  const entries = Object.values(routingMap);
+  const projectNames = projects ? Object.keys(projects) : [];
+
+  sparkle(`\n${c.bold('Per-file routing — assign each file to a destination')}`);
+  sparkle(c.dim('Format: <file> → project | provider | tool\n'));
+
+  for (const entry of entries) {
+    console.log(`\n${c.bold(entry.displayName)} ${c.dim(`(${entry.gistKey})`)}`);
+
+    // Project selection
+    if (projectNames.length > 0) {
+      const projectChoices = ['(none)', ...projectNames].map((p) => ({ label: p, value: p }));
+      const selectedProject = await askSingleSelect('Project', projectChoices);
+      entry.project = selectedProject === '(none)' ? undefined : selectedProject;
+    }
+
+    // Provider selection
+    const allProviders = ['(none)', 'claude-code', 'claude-desktop', 'opencode', 'copilot-cli', 'cursor', 'codex', 'gemini-cli'];
+    const providerChoices = allProviders.map((p) => ({ label: p, value: p }));
+    const selectedProvider = await askSingleSelect('Provider', providerChoices);
+    entry.provider = selectedProvider === '(none)' ? undefined : selectedProvider as RoutingEntry['provider'];
+
+    // Tool selection
+    const allTools = ['agent', 'skill', 'plugin', 'mcp', 'project'];
+    const toolChoices = allTools.map((t) => ({ label: t, value: t }));
+    const selectedTool = await askSingleSelect('Tool', toolChoices);
+    entry.tool = selectedTool as RoutingEntry['tool'];
+  }
+
+  console.log('');
+  return routingMap;
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
