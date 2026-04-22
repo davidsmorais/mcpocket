@@ -338,10 +338,10 @@ export function listRepoSkillsWithProviders(repoDir: string): SkillEntry[] {
     for (const providerDir of providerDirs) {
       const providerId = path.basename(providerDir) as SkillProviderId;
       const names = listSkillNamesInDir(providerDir);
+      const label: SkillEntry['provider'] = providerId === 'claude-code' ? 'claude' : 'gemini';
       for (const name of names) {
         if (!seen.has(name)) {
           seen.add(name);
-          const label = providerId === 'claude-code' ? 'claude' : providerId === 'antigravity' ? 'gemini' : providerId;
           entries.push({ name, provider: label });
         }
       }

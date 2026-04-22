@@ -318,10 +318,10 @@ export function listRepoAgentsWithProviders(repoDir: string): AgentEntry[] {
     for (const providerDir of providerDirs) {
       const providerId = path.basename(providerDir) as AgentProviderId;
       const names = listAgentNamesInDir(providerDir);
+      const label: AgentEntry['provider'] = providerId === 'claude-code' ? 'claude' : 'copilot';
       for (const name of names) {
         if (!seen.has(name)) {
           seen.add(name);
-          const label = providerId === 'claude-code' ? 'claude' : providerId === 'copilot-cli' ? 'copilot' : providerId;
           entries.push({ name, provider: label });
         }
       }
