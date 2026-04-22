@@ -9,6 +9,7 @@ export interface ProviderFlagOptions {
   copilotCli?: boolean;
   cursor?: boolean;
   codex?: boolean;
+  geminiCli?: boolean;
   antigravity?: boolean;
 }
 
@@ -33,7 +34,7 @@ const PROVIDER_COLORS: Record<string, string> = {
   'copilot-cli': '#8b949e',
   'cursor': '#a78bfa',
   'codex': '#3fb950',
-  'antigravity': '#a78bfa'
+  'gemini-cli': '#a78bfa'
 };
 
 // Exposed provider UI metadata for the frontend UI to render provider chips/badges
@@ -50,7 +51,8 @@ const OPTION_NAME_TO_PROVIDER_ID: Record<keyof ProviderFlagOptions, ProviderId> 
   copilotCli: 'copilot-cli',
   cursor: 'cursor',
   codex: 'codex',
-  antigravity: 'antigravity',
+  geminiCli: 'gemini-cli',
+  antigravity: 'gemini-cli',
 };
 
 export function resolveProviderSelection(
@@ -68,7 +70,11 @@ export function resolveProviderSelection(
   // If no CLI flags were given, fall back to the stored provider list from config
   if (selectedIds.size === 0 && configProviders && configProviders.length > 0) {
     for (const id of configProviders) {
-      selectedIds.add(id as ProviderId);
+      if (id === 'antigravity') {
+        selectedIds.add('gemini-cli');
+      } else {
+        selectedIds.add(id as ProviderId);
+      }
     }
   }
 

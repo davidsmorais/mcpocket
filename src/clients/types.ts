@@ -52,7 +52,7 @@ export type ProviderId =
   | 'copilot-cli'
   | 'cursor'
   | 'codex'
-  | 'antigravity';
+  | 'gemini-cli';
 
 export interface ProviderDefinition {
   id: ProviderId;
