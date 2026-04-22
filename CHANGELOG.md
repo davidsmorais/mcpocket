@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.6.7] - 2026-04-22
+
+### Fixed
+- OpenCode MCP config now writes to `mcpServers` (top-level) instead of `mcp.servers`, matching the schema at `https://opencode.ai/config.json`.
+
 ## [0.6.0] - 2026-04-21
 
 ### Added

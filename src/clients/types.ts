@@ -39,11 +39,9 @@ export interface ClaudeCodeSettings {
   [key: string]: unknown;
 }
 
-/** Subset of opencode config.json */
+/** Subset of opencode config.json — schema uses `mcpServers` at top level */
 export interface OpenCodeConfig {
-  mcp?: {
-    servers?: McpServersMap;
-  };
+  mcpServers?: McpServersMap;
   [key: string]: unknown;
 }
 
