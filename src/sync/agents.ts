@@ -291,6 +291,36 @@ export function listLocalAgentsWithProviders(): AgentEntry[] {
   ];
 }
 
+/** List agents from repo with their source provider, deduplicating (first provider wins) */
+export function listRepoAgentsWithProviders(repoDir: string): AgentEntry[] {
+  const agentsDir = path.join(repoDir, AGENTS_DIR);
+  if (!fs.existsSync(agentsDir)) return [];
+
+  const providerDirs = PROVIDER_SUBDIRS
+    .map((subdir) => path.join(agentsDir, subdir))
+    .filter(fs.existsSync);
+
+  if (providerDirs.length > 0) {
+    const entries: AgentEntry[] = [];
+    const seen = new Set<string>();
+    for (const providerDir of providerDirs) {
+      const providerId = path.basename(providerDir) as AgentProviderId;
+      const names = listAgentNamesInDir(providerDir);
+      for (const name of names) {
+        if (!seen.has(name)) {
+          seen.add(name);
+          const label = providerId === 'claude-code' ? 'claude' : providerId === 'copilot-cli' ? 'copilot' : providerId;
+          entries.push({ name, provider: label });
+        }
+      }
+    }
+    return entries;
+  }
+
+  // Fallback for old flat structure — assign 'claude' as default provider
+  return listAgentNamesInDir(agentsDir).map((name): AgentEntry => ({ name, provider: 'claude' }));
+}
+
 /** Find agents that exist in both Claude and Copilot directories (Claude wins, Copilot copy is the duplicate) */
 export function findDuplicateAgents(): Array<{ name: string; keepIn: string; removeFrom: string }> {
   const claudeNames = new Set(listAgentNamesInDir(path.join(getClaudeHomeDir(), AGENTS_DIR)));

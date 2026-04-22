@@ -8,8 +8,8 @@ import { additiveMerge, restoreFromPortableConfig, listPocketMcpServerNames } fr
 import type { PortableMcpConfig } from '../sync/mcp.js';
 import type { McpServersMap, ProviderDefinition } from '../clients/types.js';
 import { readPluginManifestsFromRepo, applyPluginManifests } from '../sync/plugins.js';
-import { applyAgentsFromRepo, listRepoAgentNames } from '../sync/agents.js';
-import { applySkillsFromRepo, listRepoSkillNames } from '../sync/skills.js';
+import { applyAgentsFromRepo, listRepoAgentNames, listRepoAgentsWithProviders } from '../sync/agents.js';
+import { applySkillsFromRepo, listRepoSkillNames, listRepoSkillsWithProviders } from '../sync/skills.js';
 import { formatProviderList, resolveProviderSelection, PROVIDER_UI_METADATA } from './provider-options.js';
 import type { ProviderFlagOptions } from './provider-options.js';
 import { promptForItemSelection, promptForTwoStepSelection, type ItemFilters } from './item-select.js';
@@ -57,6 +57,12 @@ export async function pullCommand(
   const allAgentNames = activeCategories.has('agents') ? listRepoAgentNames(repoDir) : [];
   const allSkillNames = activeCategories.has('skills') ? listRepoSkillNames(repoDir) : [];
 
+  // Build provider maps for UI/interactive display
+  const agentEntries = activeCategories.has('agents') ? listRepoAgentsWithProviders(repoDir) : [];
+  const skillEntries = activeCategories.has('skills') ? listRepoSkillsWithProviders(repoDir) : [];
+  const agentProviders = Object.fromEntries(agentEntries.map((e) => [e.name, e.provider]));
+  const skillProviders = Object.fromEntries(skillEntries.map((e) => [e.name, e.provider]));
+
   // ── Item selection ────────────────────────────────────────────────────────
 
   let filters: ItemFilters = {};
@@ -64,7 +70,7 @@ export async function pullCommand(
   if (options.ui) {
     const aiProviders = selection.selected.map((p) => p.displayName);
     filters = await openSelectionUi(
-      { agents: allAgentNames, skills: allSkillNames, mcps: allMcpNames, aiProviders, providers: PROVIDER_UI_METADATA, projects: config.projects },
+      { agents: allAgentNames, skills: allSkillNames, mcps: allMcpNames, aiProviders, agentProviders, skillProviders, providers: PROVIDER_UI_METADATA, projects: config.projects },
       'pull',
     );
   } else if (options.interactive) {
@@ -73,6 +79,7 @@ export async function pullCommand(
       allAgentNames,
       allSkillNames,
       allMcpNames,
+      { ...agentProviders, ...skillProviders },
     );
   }
 

@@ -310,6 +310,36 @@ export function listLocalSkillsWithProviders(): SkillEntry[] {
   ];
 }
 
+/** List skills from repo with their source provider, deduplicating (first provider wins) */
+export function listRepoSkillsWithProviders(repoDir: string): SkillEntry[] {
+  const skillsDir = path.join(repoDir, SKILLS_DIR);
+  if (!fs.existsSync(skillsDir)) return [];
+
+  const providerDirs = PROVIDER_SUBDIRS
+    .map((subdir) => path.join(skillsDir, subdir))
+    .filter(fs.existsSync);
+
+  if (providerDirs.length > 0) {
+    const entries: SkillEntry[] = [];
+    const seen = new Set<string>();
+    for (const providerDir of providerDirs) {
+      const providerId = path.basename(providerDir) as SkillProviderId;
+      const names = listSkillNamesInDir(providerDir);
+      for (const name of names) {
+        if (!seen.has(name)) {
+          seen.add(name);
+          const label = providerId === 'claude-code' ? 'claude' : providerId === 'antigravity' ? 'gemini' : providerId;
+          entries.push({ name, provider: label });
+        }
+      }
+    }
+    return entries;
+  }
+
+  // Fallback for old flat structure — assign 'claude' as default provider
+  return listSkillNamesInDir(skillsDir).map((name): SkillEntry => ({ name, provider: 'claude' }));
+}
+
 /** Find top-level skills that exist in both Claude and Gemini directories (Claude wins, Gemini copy is the duplicate) */
 export function findDuplicateSkills(): Array<{ name: string; keepIn: string; removeFrom: string }> {
   const claudeTopLevel = new Set(
