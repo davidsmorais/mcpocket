@@ -10,9 +10,9 @@ import type { McpServersMap, ProviderDefinition } from '../clients/types.js';
 import { readPluginManifestsFromRepo, applyPluginManifests } from '../sync/plugins.js';
 import { applyAgentsFromRepo, listRepoAgentNames } from '../sync/agents.js';
 import { applySkillsFromRepo, listRepoSkillNames } from '../sync/skills.js';
-import { formatProviderList, resolveProviderSelection } from './provider-options.js';
+import { formatProviderList, resolveProviderSelection, PROVIDER_UI_METADATA } from './provider-options.js';
 import type { ProviderFlagOptions } from './provider-options.js';
-import { promptForItemSelection, type ItemFilters } from './item-select.js';
+import { promptForItemSelection, promptForTwoStepSelection, type ItemFilters } from './item-select.js';
 import { openSelectionUi } from './ui-server.js';
 import { askSecret, askSingleSelect } from '../utils/prompt.js';
 import { copyProjectFilesFromPocket } from '../sync/project.js';
@@ -64,11 +64,11 @@ export async function pullCommand(
   if (options.ui) {
     const aiProviders = selection.selected.map((p) => p.displayName);
     filters = await openSelectionUi(
-      { agents: allAgentNames, skills: allSkillNames, mcps: allMcpNames, aiProviders },
+      { agents: allAgentNames, skills: allSkillNames, mcps: allMcpNames, aiProviders, providers: PROVIDER_UI_METADATA },
       'pull',
     );
   } else if (options.interactive) {
-    filters = await promptForItemSelection(
+    filters = await promptForTwoStepSelection(
       'What would you like to pull?',
       allAgentNames,
       allSkillNames,
@@ -248,7 +248,7 @@ function restoreClaudeHomeAssetsFromPocket(
 
   if (shouldRestoreAgents) {
     sparkle(WITTY.readingAgents);
-    agentResult = applyAgentsFromRepo(repoDir, filters.agentNames);
+    agentResult = applyAgentsFromRepo(repoDir, filters.agentNames, filters.selectedProviders);
     sparkle(`Restored ${agentResult.synced} agent file(s)`);
     if (agentResult.removed > 0) {
       sparkle(`Removed ${agentResult.removed} stale local agent file(s)`);
@@ -259,7 +259,7 @@ function restoreClaudeHomeAssetsFromPocket(
 
   if (shouldRestoreSkills) {
     sparkle(WITTY.readingSkills);
-    skillResult = applySkillsFromRepo(repoDir, filters.skillNames);
+    skillResult = applySkillsFromRepo(repoDir, filters.skillNames, filters.selectedProviders);
     sparkle(`Restored ${skillResult.synced} skill file(s)`);
     if (skillResult.removed > 0) {
       sparkle(`Removed ${skillResult.removed} stale local skill file(s)`);

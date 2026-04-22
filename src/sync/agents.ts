@@ -5,6 +5,9 @@ import { mirrorDirectory } from '../utils/files.js';
 
 const AGENTS_DIR = 'agents';
 
+const PROVIDER_SUBDIRS = ['claude-code', 'copilot-cli'] as const;
+type AgentProviderId = typeof PROVIDER_SUBDIRS[number];
+
 export interface SyncResult {
   synced: number;
   removed: number;
@@ -18,7 +21,6 @@ function isIncludedDir(relPath: string): boolean {
 function isIncludedFile(relPath: string, allowedNames?: ReadonlySet<string>): boolean {
   if (!relPath.endsWith('.md')) return false;
   if (!allowedNames) return true;
-  // Extract agent name with full relative path, removing .md extension
   const agentName = relPath.slice(0, -3);
   return allowedNames.has(agentName);
 }
@@ -27,16 +29,39 @@ function isIncludedFile(relPath: string, allowedNames?: ReadonlySet<string>): bo
 export function listLocalAgentNames(): string[] {
   const claudeNames = listAgentNamesInDir(path.join(getClaudeHomeDir(), AGENTS_DIR));
   const copilotNames = listAgentNamesInDir(getCopilotAgentsDir());
-  // Deduplicate; Claude names take precedence (listed first)
   const seen = new Set(claudeNames);
   const extras = copilotNames.filter((n) => !seen.has(n));
   return [...claudeNames, ...extras];
 }
 
-/** List agent names available in repo/agents/ */
+/** List agent names available in repo/agents/ (supports both provider-scoped and flat structure) */
 export function listRepoAgentNames(repoDir: string): string[] {
-  const dir = path.join(repoDir, AGENTS_DIR);
-  return listAgentNamesInDir(dir);
+  const agentsDir = path.join(repoDir, AGENTS_DIR);
+  if (!fs.existsSync(agentsDir)) return [];
+
+  const hasProviderSubdirs = PROVIDER_SUBDIRS.some((subdir) =>
+    fs.existsSync(path.join(agentsDir, subdir)),
+  );
+
+  if (hasProviderSubdirs) {
+    const allNames: string[] = [];
+    const seen = new Set<string>();
+    for (const subdir of PROVIDER_SUBDIRS) {
+      const providerDir = path.join(agentsDir, subdir);
+      if (fs.existsSync(providerDir)) {
+        const names = listAgentNamesInDir(providerDir);
+        for (const name of names) {
+          if (!seen.has(name)) {
+            seen.add(name);
+            allNames.push(name);
+          }
+        }
+      }
+    }
+    return allNames;
+  }
+
+  return listAgentNamesInDir(agentsDir);
 }
 
 function listAgentNamesInDir(dir: string): string[] {
@@ -49,11 +74,9 @@ function listAgentNamesInDir(dir: string): string[] {
       const relPath = relPrefix ? path.join(relPrefix, entry.name) : entry.name;
 
       if (entry.isFile() && entry.name.endsWith('.md')) {
-        // Add agent with relative path, removing .md extension
         const agentName = relPath.slice(0, -3);
         names.push(agentName);
       } else if (entry.isDirectory()) {
-        // Recursively scan subdirectories
         const subDir = path.join(currentDir, entry.name);
         scanDir(subDir, relPath);
       }
@@ -64,47 +87,108 @@ function listAgentNamesInDir(dir: string): string[] {
   return names;
 }
 
-/** Copy agents/ from ~/.claude/agents/ (and ~/.copilot/agents/ if present) to repo/agents/ */
-export function writeAgentsToRepo(repoDir: string, allowedNames?: ReadonlySet<string>): SyncResult {
+/**
+ * Copy agents from local sources to repo/agents/<provider>/ subdirectories.
+ * Each source is written to its own provider subdir to avoid duplication.
+ */
+export function writeAgentsToRepo(repoDir: string, allowedNames?: ReadonlySet<string>, selectedProviders?: ReadonlySet<string>): SyncResult {
   const claudeSource = path.join(getClaudeHomeDir(), AGENTS_DIR);
   const copilotSource = getCopilotAgentsDir();
-  const dest = path.join(repoDir, AGENTS_DIR);
+  const agentsDir = path.join(repoDir, AGENTS_DIR);
 
-  const sources = [copilotSource, claudeSource].filter(fs.existsSync);
+  const sources: Array<{ dir: string; provider: AgentProviderId }> = [];
+  if (fs.existsSync(claudeSource) && (!selectedProviders || selectedProviders.has('claude-code'))) {
+    sources.push({ dir: claudeSource, provider: 'claude-code' });
+  }
+  if (fs.existsSync(copilotSource) && (!selectedProviders || selectedProviders.has('copilot-cli'))) {
+    sources.push({ dir: copilotSource, provider: 'copilot-cli' });
+  }
+
   if (sources.length === 0) {
-    const removed = removeManagedDir(dest);
+    let removed = 0;
+    for (const subdir of PROVIDER_SUBDIRS) {
+      removed += removeManagedDir(path.join(agentsDir, subdir));
+    }
+    removed += removeManagedDir(agentsDir);
     return { synced: 0, removed };
   }
 
-  if (sources.length === 1) {
-    return mirrorDirectory(sources[0], dest, {
+  let totalSynced = 0;
+  let totalRemoved = 0;
+
+  for (const { dir: source, provider } of sources) {
+    const dest = path.join(agentsDir, provider);
+    const result = mirrorDirectory(source, dest, {
       includeFile: (relPath) => isIncludedFile(relPath, allowedNames),
       includeDirectory: (relPath) => isIncludedDir(relPath),
     });
+    totalSynced += result.synced;
+    totalRemoved += result.removed;
   }
 
-  // Multiple sources: collect files from all (later sources override earlier ones),
-  // then write to dest and prune stale files.
-  return mirrorMultipleDirectories(sources, dest, {
-    includeFile: (relPath) => isIncludedFile(relPath, allowedNames),
-    includeDirectory: (relPath) => isIncludedDir(relPath),
-  });
+  for (const subdir of PROVIDER_SUBDIRS) {
+    const providerDir = path.join(agentsDir, subdir);
+    const hasSource = sources.some((s) => s.provider === subdir);
+    if (!hasSource && fs.existsSync(providerDir)) {
+      totalRemoved += removeManagedDir(providerDir);
+    }
+  }
+
+  return { synced: totalSynced, removed: totalRemoved };
 }
 
-/** Copy agents/ from repo/agents/ to ~/.claude/agents/ (overwrite) */
-export function applyAgentsFromRepo(repoDir: string, allowedNames?: ReadonlySet<string>): SyncResult {
-  const source = path.join(repoDir, AGENTS_DIR);
-  const dest = path.join(getClaudeHomeDir(), AGENTS_DIR);
+/**
+ * Copy agents from repo/agents/<provider>/ subdirectories to ~/.claude/agents/.
+ * Reads from all provider subdirs and merges into the Claude home directory.
+ */
+function getAgentProviderTarget(providerId: AgentProviderId): string {
+  const targets: Record<AgentProviderId, string> = {
+    'claude-code': path.join(getClaudeHomeDir(), AGENTS_DIR),
+    'copilot-cli': getCopilotAgentsDir(),
+  };
+  return targets[providerId];
+}
 
-  if (!fs.existsSync(source)) {
-    const removed = removeManagedDir(dest);
+export function applyAgentsFromRepo(repoDir: string, allowedNames?: ReadonlySet<string>, selectedProviders?: ReadonlySet<string>): SyncResult {
+  const agentsDir = path.join(repoDir, AGENTS_DIR);
+
+  const providerDirs = PROVIDER_SUBDIRS
+    .filter((subdir) => !selectedProviders || selectedProviders.has(subdir))
+    .map((subdir) => path.join(agentsDir, subdir))
+    .filter(fs.existsSync);
+
+  if (providerDirs.length === 0) {
+    if (fs.existsSync(agentsDir)) {
+      const dest = path.join(getClaudeHomeDir(), AGENTS_DIR);
+      return mirrorDirectory(agentsDir, dest, {
+        includeFile: (relPath) => isIncludedFile(relPath, allowedNames),
+        includeDirectory: (relPath) => isIncludedDir(relPath),
+      });
+    }
+    let removed = 0;
+    for (const providerSubdir of PROVIDER_SUBDIRS) {
+      removed += removeManagedDir(getAgentProviderTarget(providerSubdir));
+    }
     return { synced: 0, removed };
   }
 
-  return mirrorDirectory(source, dest, {
-    includeFile: (relPath) => isIncludedFile(relPath, allowedNames),
-    includeDirectory: (relPath) => isIncludedDir(relPath),
-  });
+  let totalSynced = 0;
+  let totalRemoved = 0;
+
+  for (const providerSubdir of PROVIDER_SUBDIRS) {
+    const sourceDir = path.join(agentsDir, providerSubdir);
+    if (!fs.existsSync(sourceDir)) continue;
+
+    const destDir = getAgentProviderTarget(providerSubdir);
+    const result = mirrorDirectory(sourceDir, destDir, {
+      includeFile: (relPath) => isIncludedFile(relPath, allowedNames),
+      includeDirectory: (relPath) => isIncludedDir(relPath),
+    });
+    totalSynced += result.synced;
+    totalRemoved += result.removed;
+  }
+
+  return { synced: totalSynced, removed: totalRemoved };
 }
 
 function removeManagedDir(dir: string): number {
@@ -127,45 +211,6 @@ export function clearAgentsFromRepo(repoDir: string): SyncResult {
 interface MirrorOptions {
   includeFile?: (relPath: string) => boolean;
   includeDirectory?: (relPath: string) => boolean;
-}
-
-function mirrorMultipleDirectories(
-  sourceDirs: string[],
-  destDir: string,
-  options: MirrorOptions = {},
-): SyncResult {
-  const includeFile = options.includeFile ?? (() => true);
-  const includeDirectory = options.includeDirectory ?? (() => true);
-
-  // Build combined source map; later dirs in the array override earlier ones
-  const sourceFiles = new Map<string, string>();
-  for (const sourceDir of sourceDirs) {
-    collectAgentFiles(sourceDir, '', sourceFiles, includeFile, includeDirectory);
-  }
-
-  fs.mkdirSync(destDir, { recursive: true });
-
-  let synced = 0;
-  for (const [relPath, fullPath] of sourceFiles) {
-    const destPath = path.join(destDir, relPath);
-    fs.mkdirSync(path.dirname(destPath), { recursive: true });
-    fs.copyFileSync(fullPath, destPath);
-    synced++;
-  }
-
-  // Remove dest files not present in any source
-  const destFiles = listAgentFiles(destDir);
-  let removed = 0;
-  for (const relPath of destFiles) {
-    if (!includeFile(relPath)) continue;
-    if (!sourceFiles.has(relPath)) {
-      fs.rmSync(path.join(destDir, relPath), { force: true });
-      removed++;
-    }
-  }
-
-  removeEmptyAgentDirs(destDir);
-  return { synced, removed };
 }
 
 function collectAgentFiles(

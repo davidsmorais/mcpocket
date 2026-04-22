@@ -6,6 +6,9 @@ import type { SyncResult } from './agents.js';
 
 const SKILLS_DIR = 'skills';
 
+const PROVIDER_SUBDIRS = ['claude-code', 'antigravity'] as const;
+type SkillProviderId = typeof PROVIDER_SUBDIRS[number];
+
 const SKIP_DIRS = new Set(['node_modules', '.git', 'dist', '.cache', '__pycache__']);
 const SKIP_PREFIXES = ['.'];
 
@@ -19,9 +22,6 @@ function shouldSkip(name: string): boolean {
 
 function isAllowedTopLevel(relPath: string, allowedNames?: ReadonlySet<string>): boolean {
   if (!allowedNames) return true;
-  // Check if relPath is under any of the allowed skill directories
-  // Skills can now be nested (e.g., "team/my-skill"), so we check if relPath
-  // matches or is under any allowed skill directory
   for (const skillName of allowedNames) {
     if (relPath === skillName || relPath.startsWith(skillName + path.sep)) {
       return true;
@@ -30,7 +30,7 @@ function isAllowedTopLevel(relPath: string, allowedNames?: ReadonlySet<string>):
   return false;
 }
 
-/** List skill names (top-level entries) available in ~/.claude/skills/ and ~/.gemini/extensions/agency-agents/skills/ */
+/** List skill names available in ~/.claude/skills/ and ~/.gemini/extensions/agency-agents/skills/ */
 export function listLocalSkillNames(): string[] {
   const claudeNames = listSkillNamesInDir(path.join(getClaudeHomeDir(), SKILLS_DIR));
   const geminiNames = listSkillNamesInDir(getGeminiAgencySkillsDir());
@@ -39,10 +39,34 @@ export function listLocalSkillNames(): string[] {
   return [...claudeNames, ...extras];
 }
 
-/** List skill names (top-level entries) available in repo/skills/ */
+/** List skill names available in repo/skills/ (supports both provider-scoped and flat structure) */
 export function listRepoSkillNames(repoDir: string): string[] {
-  const dir = path.join(repoDir, SKILLS_DIR);
-  return listSkillNamesInDir(dir);
+  const skillsDir = path.join(repoDir, SKILLS_DIR);
+  if (!fs.existsSync(skillsDir)) return [];
+
+  const hasProviderSubdirs = PROVIDER_SUBDIRS.some((subdir) =>
+    fs.existsSync(path.join(skillsDir, subdir)),
+  );
+
+  if (hasProviderSubdirs) {
+    const allNames: string[] = [];
+    const seen = new Set<string>();
+    for (const subdir of PROVIDER_SUBDIRS) {
+      const providerDir = path.join(skillsDir, subdir);
+      if (fs.existsSync(providerDir)) {
+        const names = listSkillNamesInDir(providerDir);
+        for (const name of names) {
+          if (!seen.has(name)) {
+            seen.add(name);
+            allNames.push(name);
+          }
+        }
+      }
+    }
+    return allNames;
+  }
+
+  return listSkillNamesInDir(skillsDir);
 }
 
 function listSkillNamesInDir(dir: string): string[] {
@@ -55,9 +79,7 @@ function listSkillNamesInDir(dir: string): string[] {
       const relPath = relPrefix ? path.join(relPrefix, entry.name) : entry.name;
 
       if (entry.isDirectory()) {
-        // Add skill directory name with relative path
         names.push(relPath);
-        // Recursively scan subdirectories
         const subDir = path.join(currentDir, entry.name);
         scanDir(subDir, relPath);
       }
@@ -68,42 +90,108 @@ function listSkillNamesInDir(dir: string): string[] {
   return names;
 }
 
-/** Copy skills/ from ~/.claude/skills/ (and ~/.gemini/extensions/agency-agents/skills/ if present) to repo/skills/ */
-export function writeSkillsToRepo(repoDir: string, allowedNames?: ReadonlySet<string>): SyncResult {
+/**
+ * Copy skills from local sources to repo/skills/<provider>/ subdirectories.
+ * Each source is written to its own provider subdir to avoid duplication.
+ */
+export function writeSkillsToRepo(repoDir: string, allowedNames?: ReadonlySet<string>, selectedProviders?: ReadonlySet<string>): SyncResult {
   const claudeSource = path.join(getClaudeHomeDir(), SKILLS_DIR);
   const geminiSource = getGeminiAgencySkillsDir();
-  const dest = path.join(repoDir, SKILLS_DIR);
+  const skillsDir = path.join(repoDir, SKILLS_DIR);
 
   const includeDir = (relPath: string) => !shouldSkip(path.basename(relPath)) && isAllowedTopLevel(relPath, allowedNames);
   const includeFile = (relPath: string) => relPath.endsWith('.md') && !shouldSkip(path.basename(relPath)) && isAllowedTopLevel(relPath, allowedNames);
 
-  const sources = [geminiSource, claudeSource].filter(fs.existsSync);
+  const sources: Array<{ dir: string; provider: SkillProviderId }> = [];
+  if (fs.existsSync(claudeSource) && (!selectedProviders || selectedProviders.has('claude-code'))) {
+    sources.push({ dir: claudeSource, provider: 'claude-code' });
+  }
+  if (fs.existsSync(geminiSource) && (!selectedProviders || selectedProviders.has('antigravity'))) {
+    sources.push({ dir: geminiSource, provider: 'antigravity' });
+  }
+
   if (sources.length === 0) {
-    const removed = removeManagedDir(dest);
+    let removed = 0;
+    for (const subdir of PROVIDER_SUBDIRS) {
+      removed += removeManagedDir(path.join(skillsDir, subdir));
+    }
+    removed += removeManagedDir(skillsDir);
     return { synced: 0, removed };
   }
 
-  if (sources.length === 1) {
-    return mirrorDirectory(sources[0], dest, { includeDirectory: includeDir, includeFile });
+  let totalSynced = 0;
+  let totalRemoved = 0;
+
+  for (const { dir: source, provider } of sources) {
+    const dest = path.join(skillsDir, provider);
+    const result = mirrorDirectory(source, dest, { includeDirectory: includeDir, includeFile });
+    totalSynced += result.synced;
+    totalRemoved += result.removed;
   }
 
-  return mirrorMultipleSkillDirs(sources, dest, { includeDirectory: includeDir, includeFile });
+  for (const subdir of PROVIDER_SUBDIRS) {
+    const providerDir = path.join(skillsDir, subdir);
+    const hasSource = sources.some((s) => s.provider === subdir);
+    if (!hasSource && fs.existsSync(providerDir)) {
+      totalRemoved += removeManagedDir(providerDir);
+    }
+  }
+
+  return { synced: totalSynced, removed: totalRemoved };
 }
 
-/** Copy skills/ from repo/skills/ to ~/.claude/skills/ (overwrite, excluding node_modules) */
-export function applySkillsFromRepo(repoDir: string, allowedNames?: ReadonlySet<string>): SyncResult {
-  const source = path.join(repoDir, SKILLS_DIR);
-  const dest = path.join(getClaudeHomeDir(), SKILLS_DIR);
+function getSkillProviderTarget(providerId: SkillProviderId): string {
+  const targets: Record<SkillProviderId, string> = {
+    'claude-code': path.join(getClaudeHomeDir(), SKILLS_DIR),
+    'antigravity': getGeminiAgencySkillsDir(),
+  };
+  return targets[providerId];
+}
 
-  if (!fs.existsSync(source)) {
-    const removed = removeManagedDir(dest);
+/**
+ * Copy skills from repo/skills/<provider>/ subdirectories to their respective provider target directories.
+ * Each provider's files go only to its matching target — no duplication.
+ */
+export function applySkillsFromRepo(repoDir: string, allowedNames?: ReadonlySet<string>, selectedProviders?: ReadonlySet<string>): SyncResult {
+  const skillsDir = path.join(repoDir, SKILLS_DIR);
+
+  const providerDirs = PROVIDER_SUBDIRS
+    .filter((subdir) => !selectedProviders || selectedProviders.has(subdir))
+    .map((subdir) => path.join(skillsDir, subdir))
+    .filter(fs.existsSync);
+
+  if (providerDirs.length === 0) {
+    if (fs.existsSync(skillsDir)) {
+      const dest = path.join(getClaudeHomeDir(), SKILLS_DIR);
+      return mirrorDirectory(skillsDir, dest, {
+        includeDirectory: (relPath) => !shouldSkip(path.basename(relPath)) && isAllowedTopLevel(relPath, allowedNames),
+        includeFile: (relPath) => relPath.endsWith('.md') && !shouldSkip(path.basename(relPath)) && isAllowedTopLevel(relPath, allowedNames),
+      });
+    }
+    let removed = 0;
+    for (const providerSubdir of PROVIDER_SUBDIRS) {
+      removed += removeManagedDir(getSkillProviderTarget(providerSubdir));
+    }
     return { synced: 0, removed };
   }
 
-  return mirrorDirectory(source, dest, {
-    includeDirectory: (relPath) => !shouldSkip(path.basename(relPath)) && isAllowedTopLevel(relPath, allowedNames),
-    includeFile: (relPath) => relPath.endsWith('.md') && !shouldSkip(path.basename(relPath)) && isAllowedTopLevel(relPath, allowedNames),
-  });
+  let totalSynced = 0;
+  let totalRemoved = 0;
+
+  for (const providerSubdir of PROVIDER_SUBDIRS) {
+    const sourceDir = path.join(skillsDir, providerSubdir);
+    if (!fs.existsSync(sourceDir)) continue;
+
+    const destDir = getSkillProviderTarget(providerSubdir);
+    const result = mirrorDirectory(sourceDir, destDir, {
+      includeDirectory: (relPath) => !shouldSkip(path.basename(relPath)) && isAllowedTopLevel(relPath, allowedNames),
+      includeFile: (relPath) => relPath.endsWith('.md') && !shouldSkip(path.basename(relPath)) && isAllowedTopLevel(relPath, allowedNames),
+    });
+    totalSynced += result.synced;
+    totalRemoved += result.removed;
+  }
+
+  return { synced: totalSynced, removed: totalRemoved };
 }
 
 function removeManagedDir(dir: string): number {
@@ -152,43 +240,6 @@ export function pruneSkillsFromRepo(repoDir: string, keepNames: ReadonlySet<stri
 interface MirrorOptions {
   includeFile?: (relPath: string) => boolean;
   includeDirectory?: (relPath: string) => boolean;
-}
-
-function mirrorMultipleSkillDirs(
-  sourceDirs: string[],
-  destDir: string,
-  options: MirrorOptions = {},
-): SyncResult {
-  const includeFile = options.includeFile ?? (() => true);
-  const includeDirectory = options.includeDirectory ?? (() => true);
-
-  const sourceFiles = new Map<string, string>();
-  for (const sourceDir of sourceDirs) {
-    collectSkillFiles(sourceDir, '', sourceFiles, includeFile, includeDirectory);
-  }
-
-  fs.mkdirSync(destDir, { recursive: true });
-
-  let synced = 0;
-  for (const [relPath, fullPath] of sourceFiles) {
-    const destPath = path.join(destDir, relPath);
-    fs.mkdirSync(path.dirname(destPath), { recursive: true });
-    fs.copyFileSync(fullPath, destPath);
-    synced++;
-  }
-
-  const destFiles = listSkillFiles(destDir);
-  let removed = 0;
-  for (const relPath of destFiles) {
-    if (!includeFile(relPath)) continue;
-    if (!sourceFiles.has(relPath)) {
-      fs.rmSync(path.join(destDir, relPath), { force: true });
-      removed++;
-    }
-  }
-
-  pruneEmptyDirs(destDir);
-  return { synced, removed };
 }
 
 function collectSkillFiles(

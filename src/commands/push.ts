@@ -10,9 +10,9 @@ import { readPluginManifests, writePluginManifestsToRepo } from '../sync/plugins
 import { writeAgentsToRepo, listLocalAgentsWithProviders } from '../sync/agents.js';
 import { writeSkillsToRepo, listLocalSkillsWithProviders } from '../sync/skills.js';
 import { prunePocketDir } from '../sync/pocket.js';
-import { formatProviderList, resolveProviderSelection } from './provider-options.js';
+import { formatProviderList, resolveProviderSelection, PROVIDER_UI_METADATA } from './provider-options.js';
 import type { ProviderFlagOptions } from './provider-options.js';
-import { promptForItemSelection, type ItemFilters } from './item-select.js';
+import { promptForItemSelection, promptForTwoStepSelection, type ItemFilters } from './item-select.js';
 import { openSelectionUi } from './ui-server.js';
 import { askSecret, ask } from '../utils/prompt.js';
 import { readProjectConfig, copyProjectFilesToPocket } from '../sync/project.js';
@@ -84,11 +84,11 @@ export async function pushCommand(
   if (options.ui) {
     const aiProviders = selection.selected.map((p) => p.displayName);
     filters = await openSelectionUi(
-      { agents: allAgentNames, skills: allSkillNames, mcps: allMcpNames, plugins: allPluginPaths, aiProviders, agentProviders, skillProviders },
+      { agents: allAgentNames, skills: allSkillNames, mcps: allMcpNames, plugins: allPluginPaths, aiProviders, agentProviders, skillProviders, providers: PROVIDER_UI_METADATA },
       'push',
     );
   } else if (options.interactive) {
-    filters = await promptForItemSelection(
+    filters = await promptForTwoStepSelection(
       'What would you like to push?',
       allAgentNames,
       allSkillNames,
@@ -250,7 +250,7 @@ function syncClaudeHomeAssetsToPocket(
 
   if (shouldSyncAgents) {
     sparkle(WITTY.readingAgents);
-    agentResult = writeAgentsToRepo(repoDir, filters.agentNames);
+    agentResult = writeAgentsToRepo(repoDir, filters.agentNames, filters.selectedProviders);
     sparkle(`Synced ${agentResult.synced} agent file(s)`);
     if (agentResult.removed > 0) {
       sparkle(`Removed ${agentResult.removed} stale agent file(s) from the pocket`);
@@ -261,7 +261,7 @@ function syncClaudeHomeAssetsToPocket(
 
   if (shouldSyncSkills) {
     sparkle(WITTY.readingSkills);
-    skillResult = writeSkillsToRepo(repoDir, filters.skillNames);
+    skillResult = writeSkillsToRepo(repoDir, filters.skillNames, filters.selectedProviders);
     sparkle(`Synced ${skillResult.synced} skill file(s)`);
     if (skillResult.removed > 0) {
       sparkle(`Removed ${skillResult.removed} stale skill file(s) from the pocket`);

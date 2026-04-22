@@ -15,6 +15,8 @@ export interface UiItems {
   aiProviders?: string[];
   agentProviders?: Record<string, string>;
   skillProviders?: Record<string, string>;
+  // NEW: provider list for UI-driven selection
+  providers?: Array<{ id: string; displayName: string; color: string }>;
 }
 
 /**
@@ -30,7 +32,8 @@ export async function openSelectionUi(
     const server = http.createServer((req, res) => {
       if (req.method === 'GET' && req.url === '/') {
         res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
-        res.end(buildHtml(items, action));
+        // Pass providers to the HTML builder for rendering and filtering
+        res.end(buildHtml(items, action, items.providers));
         return;
       }
 
@@ -76,7 +79,7 @@ export async function openSelectionUi(
         req.on('data', (chunk: Buffer) => { body += chunk.toString(); });
         req.on('end', () => {
           try {
-            const sel: { agents: string[]; skills: string[]; mcps: string[]; plugins?: string[] } = JSON.parse(body);
+            const sel: { agents: string[]; skills: string[]; mcps: string[]; plugins?: string[]; aiProviders?: string[]; providers?: string[] } = JSON.parse(body);
             res.writeHead(200, { 'Content-Type': 'application/json' });
             res.end(JSON.stringify({ ok: true }));
             server.close();
@@ -114,7 +117,7 @@ export async function openSelectionUi(
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 function buildFilters(
-  sel: { agents: string[]; skills: string[]; mcps: string[]; plugins?: string[]; aiProviders?: string[] },
+  sel: { agents: string[]; skills: string[]; mcps: string[]; plugins?: string[]; aiProviders?: string[]; providers?: string[] },
   available: UiItems,
 ): ItemFilters {
   const filters: ItemFilters = {};
@@ -126,6 +129,9 @@ function buildFilters(
   }
   if (available.aiProviders && sel.aiProviders && sel.aiProviders.length < available.aiProviders.length) {
     filters.aiProviderNames = new Set(sel.aiProviders);
+  }
+  if (available.providers && sel.providers && sel.providers.length < available.providers.length) {
+    filters.selectedProviders = new Set(sel.providers);
   }
   return filters;
 }
@@ -165,6 +171,32 @@ function renderBreadcrumb(name: string): string {
   return `${breadcrumbs}<span class="path-sep">›</span><span class="path-name">${esc(fileName)}</span>`;
 }
 
+/** Render the Providers group (first in the UI). */
+function renderProvidersGroup(providers?: Array<{ id: string; displayName: string; color: string }>): string {
+  if (!providers || providers.length === 0) return '';
+  const itemsHtml = providers.map((p) => {
+    const id = esc(p.id);
+    const display = esc(p.displayName);
+    const color = esc(p.color);
+    // Badge with colored badge using provider color
+    return `
+      <label class="item" title="${display}" data-provider-id="${id}" data-provider="${id}">
+        <input type="checkbox" data-kind="providers" value="${id}" checked>
+        <span class="name">${display}
+          <span class="provider-badge" style="--c:${color}; background: color-mix(in srgb, ${color} 18%, transparent); color:#fff; margin-left:6px;">${display}</span>
+        </span>
+      </label>`;
+  }).join('');
+  return `
+  <div class="group" id="grp-providers">
+    <div class="group-head">
+      <span class="badge" style="--c:var(--blue)">Providers</span>
+      <span class="grp-count" id="cnt-providers"><b>${providers.length}</b>/${providers.length}</span>
+    </div>
+    <div class="group-body">${itemsHtml}</div>
+  </div>`;
+}
+
 function renderProviderBadge(provider: string | undefined): string {
   if (!provider) return '';
   return `<span class="provider-badge provider-${esc(provider)}">${esc(provider)}</span>`;
@@ -173,13 +205,15 @@ function renderProviderBadge(provider: string | undefined): string {
 /** Render a flat list of items as checkboxes. */
 function renderFlatItems(kind: string, names: string[], providers?: Record<string, string>): string {
   return names
-    .map(
-      (n) => `
-        <label class="item" title="${esc(n)}">
+    .map((n) => {
+      const pid = providers?.[n] ?? '';
+      const asset = (pid === 'claude-code' || pid === 'claude-desktop') ? 'claude' : (pid === 'copilot-cli' ? 'copilot' : (pid === 'antigravity' ? 'gemini' : pid));
+      return `
+        <label class="item" title="${esc(n)}" data-provider="${esc(pid)}" data-provider-asset="${esc(asset)}">
           <input type="checkbox" data-kind="${kind}" value="${esc(n)}" checked>
-          <span class="name">${renderBreadcrumb(n)}${renderProviderBadge(providers?.[n])}</span>
-        </label>`,
-    )
+          <span class="name">${renderBreadcrumb(n)}${renderProviderBadge(pid)}</span>
+        </label>`;
+    })
     .join('');
 }
 
@@ -209,30 +243,39 @@ function renderCollapsibleItems(kind: string, names: string[], providers?: Recor
     const rootProvider = providers?.[rootName];
     if (children.length === 0) {
       // Simple standalone item
+      const rootPid = rootProvider || '';
+      const rootAsset = (rootPid === 'claude-code' || rootPid === 'claude-desktop') ? 'claude' : (rootPid === 'copilot-cli' ? 'copilot' : (rootPid === 'antigravity' ? 'gemini' : rootPid));
       html += `
-        <label class="item" title="${esc(rootName)}">
-          <input type="checkbox" data-kind="${kind}" value="${esc(rootName)}" checked>
-          <span class="name">${esc(rootName)}${renderProviderBadge(rootProvider)}</span>
+        <label class="item" title="${esc(rootName)}" data-provider="${esc(rootPid)}" data-provider-asset="${esc(rootAsset)}">
+          <input type="checkbox" data-kind="${kind}" value="${esc(rootName)}" data-dir="${esc(rootName)}" checked>
+          <span class="name">${esc(rootName)}${renderProviderBadge(rootPid)}</span>
         </label>`;
     } else {
       // Collapsible directory
       const safeId = `${kind}-${rootName.replace(/[^a-zA-Z0-9]/g, '-')}`;
-      const childHtml = children
-        .map(
-          (child) => `
-        <label class="item child-item" title="${esc(child)}">
+        const childHtml = children
+          .map(
+          (child) => {
+            const cpid = providers?.[child] ?? '';
+            const casset = (cpid === 'claude-code' || cpid === 'claude-desktop') ? 'claude' : (cpid === 'copilot-cli' ? 'copilot' : (cpid === 'antigravity' ? 'gemini' : cpid));
+            return `
+        <label class="item child-item" title="${esc(child)}" data-provider="${esc(cpid)}" data-provider-asset="${esc(casset)}">
           <input type="checkbox" data-kind="${kind}" value="${esc(child)}" data-parent="${esc(rootName)}" checked>
-          <span class="name">${renderBreadcrumb(child)}${renderProviderBadge(providers?.[child])}</span>
-        </label>`,
-        )
-        .join('');
+          <span class="name">${renderBreadcrumb(child)}${renderProviderBadge(cpid)}</span>
+        </label>`;
+          },
+          )
+          .join('');
 
-      html += `
+        // Build root provider asset for the collapsible group root
+        const rootPid = rootProvider || '';
+        const rootAsset: string = (rootPid === 'claude-code' || rootPid === 'claude-desktop') ? 'claude' : (rootPid === 'copilot-cli' ? 'copilot' : (rootPid === 'antigravity' ? 'gemini' : rootPid));
+        html += `
         <div class="dir-group" id="dir-${safeId}">
           <div class="dir-row">
-            <label class="item" title="${esc(rootName)}">
-              <input type="checkbox" data-kind="${kind}" value="${esc(rootName)}" data-dir="${esc(rootName)}" checked>
-              <span class="name">${esc(rootName)}${renderProviderBadge(rootProvider)}</span>
+            <label class="item" title="${esc(String(rootName))}" data-provider="${esc(rootPid)}" data-provider-asset="${esc(rootAsset)}">
+              <input type="checkbox" data-kind="${kind}" value="${esc(String(rootName))}" data-dir="${esc(String(rootName))}" checked>
+              <span class="name">${esc(String(rootName))}${renderProviderBadge(rootProvider)}</span>
             </label>
             <button class="expand-btn" onclick="toggleDir('${safeId}')" title="Expand/collapse">
               <span class="expand-icon">▶</span><span class="child-badge">${children.length}</span>
@@ -278,12 +321,18 @@ function renderGroup(
   </div>`;
 }
 
-function buildHtml(items: UiItems, action: 'push' | 'pull'): string {
+function buildHtml(
+  items: UiItems,
+  action: 'push' | 'pull',
+  providers?: Array<{ id: string; displayName: string; color: string }>,
+): string {
   const actionLabel = action === 'push' ? 'Push to Pocket' : 'Pull from Pocket';
   const actionVerb  = action === 'push' ? 'push'           : 'pull';
   const itemsJson   = JSON.stringify(items);
 
   const groups = [
+    // New: Providers first
+    renderProvidersGroup(providers),
     ...(items.aiProviders && items.aiProviders.length > 0 ? [renderGroup('aiProviders', 'AI Providers', 'var(--orange)', items.aiProviders)] : []),
     renderGroup('agents',  'Agents',       'var(--blue)',    items.agents,  items.agentProviders),
     renderGroup('skills',  'Skills',       'var(--purple)',  items.skills,  items.skillProviders),
@@ -455,7 +504,8 @@ function countFor(kind){
 }
 function updateCounts(){
   let total=0,sel=0;
-  const kinds=['aiProviders','agents','skills','mcps'];
+  const kinds=['providers','aiProviders','agents','skills','mcps'];
+  if(!ITEMS.providers) kinds.shift();
   if(!ITEMS.aiProviders) kinds.shift();
   if(ITEMS.plugins) kinds.push('plugins');
   kinds.forEach(k=>{
@@ -517,6 +567,10 @@ async function submitSel(){
   if(ITEMS.plugins) {
     sel.plugins=[];
     kinds.push('plugins');
+  }
+  if(ITEMS.providers) {
+    sel.providers=[];
+    kinds.unshift('providers');
   }
   kinds.forEach(k=>{
     document.querySelectorAll('[data-kind='+k+']:checked')
