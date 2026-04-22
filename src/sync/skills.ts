@@ -44,29 +44,45 @@ export function listRepoSkillNames(repoDir: string): string[] {
   const skillsDir = path.join(repoDir, SKILLS_DIR);
   if (!fs.existsSync(skillsDir)) return [];
 
-  const hasProviderSubdirs = PROVIDER_SUBDIRS.some((subdir) =>
-    fs.existsSync(path.join(skillsDir, subdir)),
-  );
+  const providerDirs = PROVIDER_SUBDIRS
+    .map((subdir) => path.join(skillsDir, subdir))
+    .filter(fs.existsSync);
 
-  if (hasProviderSubdirs) {
+  if (providerDirs.length > 0) {
     const allNames: string[] = [];
     const seen = new Set<string>();
-    for (const subdir of PROVIDER_SUBDIRS) {
-      const providerDir = path.join(skillsDir, subdir);
-      if (fs.existsSync(providerDir)) {
-        const names = listSkillNamesInDir(providerDir);
-        for (const name of names) {
-          if (!seen.has(name)) {
-            seen.add(name);
-            allNames.push(name);
-          }
+    for (const providerDir of providerDirs) {
+      const names = listSkillNamesInDir(providerDir);
+      for (const name of names) {
+        if (!seen.has(name)) {
+          seen.add(name);
+          allNames.push(name);
         }
+      }
+    }
+    // Also include any flat skill dirs at the skills/ root (migration compat)
+    const flatNames = listFlatSkillNames(skillsDir);
+    for (const name of flatNames) {
+      if (!seen.has(name)) {
+        seen.add(name);
+        allNames.push(name);
       }
     }
     return allNames;
   }
 
   return listSkillNamesInDir(skillsDir);
+}
+
+function listFlatSkillNames(skillsDir: string): string[] {
+  const names: string[] = [];
+  if (!fs.existsSync(skillsDir)) return names;
+  for (const entry of fs.readdirSync(skillsDir, { withFileTypes: true })) {
+    if (entry.isDirectory() && !shouldSkip(entry.name) && !PROVIDER_SUBDIRS.includes(entry.name as SkillProviderId)) {
+      names.push(entry.name);
+    }
+  }
+  return names;
 }
 
 function listSkillNamesInDir(dir: string): string[] {
@@ -136,6 +152,8 @@ export function writeSkillsToRepo(repoDir: string, allowedNames?: ReadonlySet<st
       totalRemoved += removeManagedDir(providerDir);
     }
   }
+
+  totalRemoved += migrateFlatSkillsToProviderDirs(skillsDir);
 
   return { synced: totalSynced, removed: totalRemoved };
 }
@@ -334,7 +352,7 @@ function countManagedFiles(dir: string): number {
 }
 
 function pruneEmptyDirs(dir: string): void {
-  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+  for (const entry of fs.readdirSync(dir, { withFileTypes: true})) {
     if (!entry.isDirectory() || shouldSkip(entry.name)) continue;
     const fullPath = path.join(dir, entry.name);
     pruneEmptyDirs(fullPath);
@@ -342,4 +360,20 @@ function pruneEmptyDirs(dir: string): void {
       fs.rmdirSync(fullPath);
     }
   }
+}
+
+function migrateFlatSkillsToProviderDirs(skillsDir: string): number {
+  if (!fs.existsSync(skillsDir)) return 0;
+  let removed = 0;
+  const providerDirNames = new Set<string>(PROVIDER_SUBDIRS);
+  for (const entry of fs.readdirSync(skillsDir, { withFileTypes: true })) {
+    if (providerDirNames.has(entry.name)) continue;
+    if (shouldSkip(entry.name)) continue;
+    const fullPath = path.join(skillsDir, entry.name);
+    if (entry.isDirectory()) {
+      fs.rmSync(fullPath, { recursive: true, force: true });
+      removed++;
+    }
+  }
+  return removed;
 }

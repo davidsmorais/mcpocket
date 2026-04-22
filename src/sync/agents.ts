@@ -39,29 +39,45 @@ export function listRepoAgentNames(repoDir: string): string[] {
   const agentsDir = path.join(repoDir, AGENTS_DIR);
   if (!fs.existsSync(agentsDir)) return [];
 
-  const hasProviderSubdirs = PROVIDER_SUBDIRS.some((subdir) =>
-    fs.existsSync(path.join(agentsDir, subdir)),
-  );
+  const providerDirs = PROVIDER_SUBDIRS
+    .map((subdir) => path.join(agentsDir, subdir))
+    .filter(fs.existsSync);
 
-  if (hasProviderSubdirs) {
+  if (providerDirs.length > 0) {
     const allNames: string[] = [];
     const seen = new Set<string>();
-    for (const subdir of PROVIDER_SUBDIRS) {
-      const providerDir = path.join(agentsDir, subdir);
-      if (fs.existsSync(providerDir)) {
-        const names = listAgentNamesInDir(providerDir);
-        for (const name of names) {
-          if (!seen.has(name)) {
-            seen.add(name);
-            allNames.push(name);
-          }
+    for (const providerDir of providerDirs) {
+      const names = listAgentNamesInDir(providerDir);
+      for (const name of names) {
+        if (!seen.has(name)) {
+          seen.add(name);
+          allNames.push(name);
         }
+      }
+    }
+    // Also include any flat .md files at the agents/ root (migration compat)
+    const flatNames = listFlatAgentNames(agentsDir);
+    for (const name of flatNames) {
+      if (!seen.has(name)) {
+        seen.add(name);
+        allNames.push(name);
       }
     }
     return allNames;
   }
 
   return listAgentNamesInDir(agentsDir);
+}
+
+function listFlatAgentNames(agentsDir: string): string[] {
+  const names: string[] = [];
+  if (!fs.existsSync(agentsDir)) return names;
+  for (const entry of fs.readdirSync(agentsDir, { withFileTypes: true })) {
+    if (entry.isFile() && entry.name.endsWith('.md')) {
+      names.push(entry.name.slice(0, -3));
+    }
+  }
+  return names;
 }
 
 function listAgentNamesInDir(dir: string): string[] {
@@ -133,6 +149,8 @@ export function writeAgentsToRepo(repoDir: string, allowedNames?: ReadonlySet<st
       totalRemoved += removeManagedDir(providerDir);
     }
   }
+
+  totalRemoved += migrateFlatAgentsToProviderDirs(agentsDir);
 
   return { synced: totalSynced, removed: totalRemoved };
 }
@@ -308,4 +326,27 @@ function countManagedFiles(dir: string): number {
     }
   }
   return count;
+}
+
+function migrateFlatAgentsToProviderDirs(agentsDir: string): number {
+  if (!fs.existsSync(agentsDir)) return 0;
+  let removed = 0;
+  const providerDirNames = new Set<string>(PROVIDER_SUBDIRS);
+  for (const entry of fs.readdirSync(agentsDir, { withFileTypes: true })) {
+    if (providerDirNames.has(entry.name)) continue;
+    if (entry.name.startsWith('.') || entry.name === 'node_modules') continue;
+    const fullPath = path.join(agentsDir, entry.name);
+    if (entry.isFile() && entry.name.endsWith('.md')) {
+      fs.unlinkSync(fullPath);
+      removed++;
+    } else if (entry.isDirectory()) {
+      const subFiles = fs.readdirSync(fullPath, { withFileTypes: true });
+      const hasMdFiles = subFiles.some((f) => f.isFile() && f.name.endsWith('.md'));
+      if (!hasMdFiles) {
+        fs.rmSync(fullPath, { recursive: true, force: true });
+        removed++;
+      }
+    }
+  }
+  return removed;
 }
