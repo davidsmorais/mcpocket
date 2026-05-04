@@ -285,6 +285,7 @@ function removeEmptyAgentDirs(dir: string): void {
 
 export interface AgentEntry {
   name: string;
+  /** Source label used by provider-filtering UI. */
   provider: 'claude' | 'copilot' | 'gemini';
 }
 

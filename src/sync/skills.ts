@@ -9,6 +9,7 @@ const SKILLS_DIR = 'skills';
 const PROVIDER_SUBDIRS = ['claude-code', 'gemini-cli'] as const;
 const LEGACY_PROVIDER_SUBDIRS = ['antigravity'] as const;
 type SkillProviderId = typeof PROVIDER_SUBDIRS[number];
+type LegacySkillProviderId = typeof LEGACY_PROVIDER_SUBDIRS[number];
 
 const SKIP_DIRS = new Set(['node_modules', '.git', 'dist', '.cache', '__pycache__']);
 const SKIP_PREFIXES = ['.'];
@@ -31,6 +32,11 @@ function isAllowedTopLevel(relPath: string, allowedNames?: ReadonlySet<string>):
   return false;
 }
 
+function isProviderOrLegacySubdir(name: string): boolean {
+  return PROVIDER_SUBDIRS.includes(name as SkillProviderId)
+    || LEGACY_PROVIDER_SUBDIRS.includes(name as LegacySkillProviderId);
+}
+
 /** List skill names available in ~/.claude/skills/ and Gemini CLI skill directories. */
 export function listLocalSkillNames(): string[] {
   const claudeNames = listSkillNamesInDir(path.join(getClaudeHomeDir(), SKILLS_DIR));
@@ -45,14 +51,7 @@ export function listRepoSkillNames(repoDir: string): string[] {
   const skillsDir = path.join(repoDir, SKILLS_DIR);
   if (!fs.existsSync(skillsDir)) return [];
 
-  const providerDirs = PROVIDER_SUBDIRS
-    .flatMap((subdir) => {
-      if (subdir === 'gemini-cli') {
-        return [path.join(skillsDir, subdir), ...LEGACY_PROVIDER_SUBDIRS.map((legacy) => path.join(skillsDir, legacy))];
-      }
-      return [path.join(skillsDir, subdir)];
-    })
-    .filter(fs.existsSync);
+  const providerDirs = getRepoSkillProviderDirs(skillsDir);
 
   if (providerDirs.length > 0) {
     const allNames: string[] = [];
@@ -84,7 +83,7 @@ function listFlatSkillNames(skillsDir: string): string[] {
   const names: string[] = [];
   if (!fs.existsSync(skillsDir)) return names;
   for (const entry of fs.readdirSync(skillsDir, { withFileTypes: true })) {
-    if (entry.isDirectory() && !shouldSkip(entry.name) && !PROVIDER_SUBDIRS.includes(entry.name as SkillProviderId) && !LEGACY_PROVIDER_SUBDIRS.includes(entry.name as typeof LEGACY_PROVIDER_SUBDIRS[number])) {
+    if (entry.isDirectory() && !shouldSkip(entry.name) && !isProviderOrLegacySubdir(entry.name)) {
       names.push(entry.name);
     }
   }
@@ -179,15 +178,7 @@ function getSkillProviderTarget(providerId: SkillProviderId): string {
 export function applySkillsFromRepo(repoDir: string, allowedNames?: ReadonlySet<string>, selectedProviders?: ReadonlySet<string>): SyncResult {
   const skillsDir = path.join(repoDir, SKILLS_DIR);
 
-  const providerDirs = PROVIDER_SUBDIRS
-    .filter((subdir) => !selectedProviders || selectedProviders.has(subdir))
-    .flatMap((subdir) => {
-      if (subdir === 'gemini-cli') {
-        return [path.join(skillsDir, subdir), ...LEGACY_PROVIDER_SUBDIRS.map((legacy) => path.join(skillsDir, legacy))];
-      }
-      return [path.join(skillsDir, subdir)];
-    })
-    .filter(fs.existsSync);
+  const providerDirs = getRepoSkillProviderDirs(skillsDir, selectedProviders);
 
   if (providerDirs.length === 0) {
     if (fs.existsSync(skillsDir)) {
@@ -447,4 +438,21 @@ function listGeminiSkillNames(): string[] {
 function getPreferredRepoGeminiSkillSourceDir(skillsDir: string): string | undefined {
   const candidates = [path.join(skillsDir, 'gemini-cli'), ...LEGACY_PROVIDER_SUBDIRS.map((legacy) => path.join(skillsDir, legacy))];
   return candidates.find((dir) => fs.existsSync(dir));
+}
+
+function getRepoSkillProviderDirs(skillsDir: string, selectedProviders?: ReadonlySet<string>): string[] {
+  const dirs: string[] = [];
+  if (!selectedProviders || selectedProviders.has('claude-code')) {
+    const claudeDir = path.join(skillsDir, 'claude-code');
+    if (fs.existsSync(claudeDir)) dirs.push(claudeDir);
+  }
+  if (!selectedProviders || selectedProviders.has('gemini-cli')) {
+    const geminiDir = path.join(skillsDir, 'gemini-cli');
+    if (fs.existsSync(geminiDir)) dirs.push(geminiDir);
+    for (const legacySubdir of LEGACY_PROVIDER_SUBDIRS) {
+      const legacyDir = path.join(skillsDir, legacySubdir);
+      if (fs.existsSync(legacyDir)) dirs.push(legacyDir);
+    }
+  }
+  return dirs;
 }

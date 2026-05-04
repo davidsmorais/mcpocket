@@ -302,12 +302,19 @@ function renderProviderBadge(provider: string | undefined): string {
   return `<span class="provider-badge provider-${esc(provider)}">${esc(provider)}</span>`;
 }
 
+function providerToAsset(providerId: string): string {
+  if (providerId === 'claude-code' || providerId === 'claude-desktop') return 'claude';
+  if (providerId === 'copilot-cli') return 'copilot';
+  if (providerId === 'gemini-cli' || providerId === 'antigravity') return 'gemini';
+  return providerId;
+}
+
 /** Render a flat list of items as checkboxes. */
 function renderFlatItems(kind: string, names: string[], providers?: Record<string, string>): string {
   return names
     .map((n) => {
       const pid = providers?.[n] ?? '';
-      const asset = (pid === 'claude-code' || pid === 'claude-desktop') ? 'claude' : (pid === 'copilot-cli' ? 'copilot' : (pid === 'gemini-cli' || pid === 'antigravity' ? 'gemini' : pid));
+      const asset = providerToAsset(pid);
       return `
         <label class="item" title="${esc(n)}" data-provider="${esc(pid)}" data-provider-asset="${esc(asset)}">
           <input type="checkbox" data-kind="${kind}" value="${esc(n)}" checked>
@@ -344,7 +351,7 @@ function renderCollapsibleItems(kind: string, names: string[], providers?: Recor
     if (children.length === 0) {
       // Simple standalone item
       const rootPid = rootProvider || '';
-        const rootAsset = (rootPid === 'claude-code' || rootPid === 'claude-desktop') ? 'claude' : (rootPid === 'copilot-cli' ? 'copilot' : (rootPid === 'gemini-cli' || rootPid === 'antigravity' ? 'gemini' : rootPid));
+        const rootAsset = providerToAsset(rootPid);
       html += `
         <label class="item" title="${esc(rootName)}" data-provider="${esc(rootPid)}" data-provider-asset="${esc(rootAsset)}">
           <input type="checkbox" data-kind="${kind}" value="${esc(rootName)}" data-dir="${esc(rootName)}" checked>
@@ -357,7 +364,7 @@ function renderCollapsibleItems(kind: string, names: string[], providers?: Recor
           .map(
           (child) => {
             const cpid = providers?.[child] ?? '';
-            const casset = (cpid === 'claude-code' || cpid === 'claude-desktop') ? 'claude' : (cpid === 'copilot-cli' ? 'copilot' : (cpid === 'gemini-cli' || cpid === 'antigravity' ? 'gemini' : cpid));
+            const casset = providerToAsset(cpid);
             return `
         <label class="item child-item" title="${esc(child)}" data-provider="${esc(cpid)}" data-provider-asset="${esc(casset)}">
           <input type="checkbox" data-kind="${kind}" value="${esc(child)}" data-parent="${esc(rootName)}" checked>
@@ -369,7 +376,7 @@ function renderCollapsibleItems(kind: string, names: string[], providers?: Recor
 
         // Build root provider asset for the collapsible group root
         const rootPid = rootProvider || '';
-        const rootAsset: string = (rootPid === 'claude-code' || rootPid === 'claude-desktop') ? 'claude' : (rootPid === 'copilot-cli' ? 'copilot' : (rootPid === 'gemini-cli' || rootPid === 'antigravity' ? 'gemini' : rootPid));
+        const rootAsset: string = providerToAsset(rootPid);
         html += `
         <div class="dir-group" id="dir-${safeId}">
           <div class="dir-row">
