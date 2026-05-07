@@ -29,10 +29,11 @@ program
 program
   .command('push')
   .description('Tuck your AI setup into the cloud pocket')
-  .option('-i, --interactive', 'Pick specific items to sync (keyboard UI)')
-  .option('--ui', 'Open a browser UI on port 3000 to select items to sync')
-  .option('-e, --exclude', 'Open a browser UI to select items to EXCLUDE from sync')
-  .option('--project', 'Push project-level files from this directory to your pocket')
+  .option('-i, --interactive', '(legacy alias) Pick items via keyboard tree picker — now the default')
+  .option('--ui', '(legacy) Open a browser UI on port 3000 to select items to sync')
+  .option('-e, --exclude', '(legacy) Open a browser UI to select items to EXCLUDE from sync')
+  .option('--project', 'Also include project-level files from this directory')
+  .option('--all', 'Skip the picker and sync everything (CI / scripted use)')
 
 for (const provider of PROVIDER_OPTION_FLAGS) {
   program.commands.find((command) => command.name() === 'push')?.option(provider.flag, provider.description);
@@ -46,10 +47,12 @@ program
 program
   .command('pull')
   .description('Unpack your AI setup from the cloud pocket')
-  .option('-i, --interactive', 'Assign each gist file to a destination (project > provider > tool)')
-  .option('--ui', 'Open a browser UI to assign each gist file to a destination (project > provider > tool)')
-  .option('-e, --exclude', 'Open a browser UI to select items to EXCLUDE from sync')
-  .option('--project', 'Pull project-level files from your pocket to this directory')
+  .option('-i, --interactive', '(legacy alias) per-file destination chooser — now the default')
+  .option('--ui', '(legacy) Open a browser UI to assign each gist file to a destination')
+  .option('-e, --exclude', '(legacy) Open a browser UI to select items to EXCLUDE from sync')
+  .option('--project', 'Force all files to land under the current project directory')
+  .option('--global', 'Force all files to land in the global home-dir locations')
+  .option('-y, --yes', 'Accept all proposed destinations without prompting')
 
 for (const provider of PROVIDER_OPTION_FLAGS) {
   program.commands.find((command) => command.name() === 'pull')?.option(provider.flag, provider.description);

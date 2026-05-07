@@ -30,6 +30,8 @@ You install 8 MCP servers, configure your Claude Code plugins, and build up a li
 
 mcpocket acts as a centralized sync hub for your AI setup. Push your configuration from any machine to GitHub (as a repo or gist), then pull it anywhere else. MCP servers, Claude Code agents, skills, plugins—everything syncs with end-to-end encryption for your secrets.
 
+**What's new in this release**: Every push generates an **origin manifest** (`mcpocket.manifest.json`) inside your pocket that records where each file came from—which tool, which category (settings, agents, skills, plugins, MCPs, extensions), global vs. project scope, and the original file path. On pull, you choose where each file lands per-item, with smart defaults based on the manifest. No more guessing about scope or location—sync your full AI setup between machines with one confirmation pass.
+
 ## Features
 
 - **Multi-client sync** — Claude Desktop, Claude Code, OpenCode, Copilot CLI, Cursor, Codex, and Gemini CLI configs in one shot
@@ -134,28 +136,38 @@ Requires a [GitHub personal access token](https://github.com/settings/tokens/new
 
 ### `mcpocket push`
 
-Reads MCP configs, plugin manifests, agents, and skills from the current machine. Encrypts secrets with a passphrase you choose, then uploads to your private pocket.
+**New in this release**: Shows a hierarchical picker (organized by AI tool, scope, and category) so you choose exactly what to sync. Every push generates an **origin manifest** (`mcpocket.manifest.json`) that records where each file came from—tool, category, global vs. project, and original path. This manifest travels with your pocket so the destination machine knows exactly where to restore each file.
+
+Reads MCP configs, plugin manifests, agents, skills, settings, and extensions from the current machine. Encrypts secrets with a passphrase you choose, then uploads to your private pocket.
 
 ```bash
 mcpocket push
 ```
 
-Target specific providers by passing one or more flags:
+**Options:**
 
-```bash
-mcpocket push --copilot-cli
-mcpocket push --cursor --codex
-```
+| Flag | Description |
+|---|---|
+| `--all` | Skip the picker and sync everything (CI / scripted use) |
+| `--project` | Also include project-level files from this directory |
+| `--claude-code`, `--copilot-cli`, etc. | Scope MCP server sync to specific providers |
 
-When provider flags are present, they scope the whole command:
+The interactive picker shows:
+- **Tool** (Claude, Copilot, OpenCode, Gemini)
+- **Scope** (GLOBAL — from home dir, or project-name — from project folder)
+- **Category** (Settings, Agents, Skills, Plugins, Extensions, MCPs)
+- **Items** (individual files or skill directories)
 
-- Only the selected providers' MCP configs are read and packed into `mcp-config.json`
-- Claude home assets (`~/.claude/plugins`, `~/.claude/agents`, `~/.claude/skills`) are only synced when `--claude-code` is included
+Toggle items with **space**, select all with **a**, and press **Enter** to push.
 
 - In **repo mode**: commits and pushes to your private GitHub repo.
 - In **gist mode**: uploads files to your private GitHub Gist (directory structure is flattened with `__` separators).
 
+**Legacy alias**: `-i/--interactive` still works and invokes the same tree picker (it's now the default, not an opt-in).
+
 ### `mcpocket pull`
+
+**New in this release**: Reads the origin manifest from your pocket and shows a per-item destination chooser. Each file gets a smart default destination based on where it came from (e.g., a Claude skill from your global settings goes back to `~/.claude/skills/`), and you can override per-item or globally with a flag.
 
 Downloads your config from the remote pocket, decrypts secrets with your passphrase, and writes everything to the appropriate client config files:
 
@@ -163,14 +175,31 @@ Downloads your config from the remote pocket, decrypts secrets with your passphr
 mcpocket pull
 ```
 
-You can also pull into only the providers you want:
+**Options:**
 
+| Flag | Description |
+|---|---|
+| `-y, --yes` | Accept all proposed destinations without prompting (non-interactive) |
+| `--project` | Force all files to land under the current project directory |
+| `--global` | Force all files to land in global home-dir locations (default) |
+| `--claude-code`, `--copilot-cli`, etc. | Scope MCP server pull to specific providers |
+
+The **per-item destination chooser** shows:
+1. **Which files to restore** — multi-select the items you want (default: all)
+2. **Where each item goes** — for each selected item, confirm or override the proposed destination (default from manifest origin):
+   - File from `~/.claude/agents/` → proposes `~/.claude/agents/` on destination machine
+   - File from `./.claude/agents/` (project) → proposes `./.claude/agents/` (project) on destination machine
+   - Override options available to switch between global and project scope
+
+You can accept all proposals with `-y/--yes` for scripting:
 ```bash
-mcpocket pull --opencode
-mcpocket pull --cursor --copilot-cli
+mcpocket pull --yes
 ```
 
-With provider flags, pull only writes MCP servers to those selected providers. Claude home assets are only restored when `--claude-code` is included.
+Or force everything to the current project:
+```bash
+mcpocket pull --project
+```
 
 | Client | Config file |
 |---|---|
@@ -185,6 +214,8 @@ With provider flags, pull only writes MCP servers to those selected providers. C
 Pull is **additive** — it adds servers that exist remotely but not locally, without overwriting your existing local config. Restart Claude Desktop after pulling to apply MCP changes.
 
 For synced files, pull also removes stale agent and skill files that were previously synced but no longer exist in your pocket.
+
+**Legacy alias**: `-i/--interactive` still works and invokes the same per-item chooser (it's now the default, not an opt-in).
 
 ### `mcpocket de-dupe`
 

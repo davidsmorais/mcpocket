@@ -8,7 +8,8 @@
       "Bash(npm publish:*)",
       "Bash(rtk find:*)",
       "Bash(rtk tsc *)",
-      "Bash(npx tsc *)"
+      "Bash(npx tsc *)",
+      "Bash(node --test dist/commands/cleanup.test.js)"
     ]
   }
 }
