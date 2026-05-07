@@ -22,7 +22,6 @@ program
 program
   .command('init')
   .description('Set up mcpocket: connect GitHub, create your sync pocket')
-  .option('--ui', 'Open a browser UI on port 3000 to select individual agents, skills, and plugins')
   .option('--project', 'Initialize mcpocket for this project directory (creates mcpocket.json)')
   .action((options) => initCommand(options).catch(die));
 

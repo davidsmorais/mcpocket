@@ -106,15 +106,12 @@ mcpocket pull --project
 
 ### `mcpocket init`
 
-Interactive setup wizard. Links your GitHub account, chooses a storage backend, and creates the remote pocket.
+Interactive setup wizard. Links your GitHub account via the GitHub CLI, chooses a storage backend, and creates (or connects to) the remote sync pocket.
 
 ```
 $ mcpocket init
 
-  ✦ First, let's link your GitHub account.
-  Required scopes: repo (full control of private repositories)
-
-  🔑 GitHub token: ****
+  ✦ Linking your GitHub account via the GitHub CLI...
 
   ✦ Authenticated as davidsmorais — nice to meet you!
 
@@ -123,6 +120,11 @@ $ mcpocket init
       [2] GitHub gist  (lighter, no git clone needed)
 
   Pick one [1/2]: 1
+
+  ✦ Do you have an existing pocket to connect? [y/N]
+  [If yes, select from your repositories or gists]
+
+  ✦ Pocket ready: https://github.com/davidsmorais/mcpocket-sync
 ```
 
 **Storage options:**
@@ -132,7 +134,9 @@ $ mcpocket init
 | `1` — Repo | Private `mcpocket-sync` repo | Yes | Full git log |
 | `2` — Gist | Private GitHub Gist | No | Gist revisions |
 
-Requires a [GitHub personal access token](https://github.com/settings/tokens/new) with **`repo`** scope (for repo mode) or **`gist`** scope (for gist mode).
+**Authentication**: mcpocket uses the GitHub CLI for authentication. Ensure `gh auth login` is set up first.
+
+**Note**: The sync scope (which tools, categories, and items) is chosen per-run during `push` and `pull` via the hierarchical tree picker and per-item destination chooser. Init no longer asks you to pre-select categories or providers.
 
 ### `mcpocket push`
 
@@ -374,6 +378,9 @@ mcpocket stores its own config at `~/.mcpocket/config.json`:
   // Cleanup patterns (used by `mcpocket cleanup --local`):
   "cleanupInclude": ["agents/", "skills/"],  // whitelist: only keep these
   "cleanupExclude": ["skills/nested/**"]      // blacklist: also remove these
+  // NOTE: syncCategories, syncProviders, syncAgents, syncSkills, syncPlugins
+  // are deprecated — sync scope is now determined per-run via the tree picker
+  // (push) and per-item destination chooser (pull).
 }
 ```
 

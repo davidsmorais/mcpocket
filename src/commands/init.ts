@@ -2,18 +2,12 @@ import * as path from 'node:path';
 import { createRepo, resolveRepoInfo, cloneRepo, ensureGitConfig } from '../storage/github.js';
 import { createGist, resolveGistInfo } from '../storage/gist.js';
 import { getGhToken, getGhUsername, listGhRepos, listGhGists } from '../storage/gh-cli.js';
-import { writeConfig, configExists, getLocalRepoDir, ALL_SYNC_CATEGORIES } from '../config.js';
-import type { StorageType, SyncCategory } from '../config.js';
-import { ALL_PROVIDERS } from '../clients/providers.js';
+import { writeConfig, configExists, getLocalRepoDir } from '../config.js';
+import type { StorageType } from '../config.js';
 import { ask, askMultiSelect, askSingleSelect } from '../utils/prompt.js';
 import { sparkle, celebrate, section, oops, WITTY, c } from '../utils/sparkle.js';
-import { openSelectionUi, type UiItems } from './ui-server.js';
-import { listLocalAgentNames } from '../sync/agents.js';
-import { listLocalSkillNames } from '../sync/skills.js';
-import { readPluginManifests } from '../sync/plugins.js';
 
 export interface InitOptions {
-  ui?: boolean;
   project?: boolean;
 }
 
@@ -108,18 +102,11 @@ export async function initCommand(options: InitOptions = {}): Promise<void> {
     const fs = await import('fs');
     fs.mkdirSync(localDir, { recursive: true });
 
-    const { syncCategories, syncProviders, syncAgents, syncSkills, syncPlugins } = await askSyncScope(options.ui);
-
     writeConfig({
       githubToken: token,
       storageType: 'gist',
       gistId: gistInfo.id,
       gistUrl: gistInfo.htmlUrl,
-      syncCategories,
-      syncProviders,
-      syncAgents,
-      syncSkills,
-      syncPlugins,
     });
   } else {
     let repoInfo: Awaited<ReturnType<typeof createRepo>>;
@@ -175,19 +162,12 @@ export async function initCommand(options: InitOptions = {}): Promise<void> {
       process.exit(1);
     }
 
-    const { syncCategories, syncProviders, syncAgents, syncSkills, syncPlugins } = await askSyncScope(options.ui);
-
     writeConfig({
       githubToken: token,
       storageType: 'repo',
       repoFullName: repoInfo.fullName,
       repoCloneUrl: repoInfo.cloneUrl,
       repoHtmlUrl: repoInfo.htmlUrl,
-      syncCategories,
-      syncProviders,
-      syncAgents,
-      syncSkills,
-      syncPlugins,
     });
   }
 
@@ -209,83 +189,6 @@ function relativeTime(dateStr: string): string {
   return `${months} months ago`;
 }
 
-interface AskSyncScopeResult {
-  syncCategories: SyncCategory[];
-  syncProviders: string[];
-  syncAgents?: string[];
-  syncSkills?: string[];
-  syncPlugins?: string[];
-}
-
-async function askSyncScope(useUI?: boolean): Promise<AskSyncScopeResult> {
-  section('Sync Scope');
-  sparkle('Choose what mcpocket will sync for you.');
-
-  const CATEGORY_LABELS: Record<SyncCategory, string> = {
-    mcps: 'MCPs',
-    agents: 'Agents',
-    skills: 'Skills',
-    plugins: 'Plugins',
-  };
-
-  const syncCategories = await askMultiSelect<SyncCategory>(
-    'Which categories should be synced?',
-    ALL_SYNC_CATEGORIES.map((cat) => ({
-      label: CATEGORY_LABELS[cat],
-      value: cat,
-    }))
-  );
-
-  let syncProviders: string[] = ALL_PROVIDERS.map((p) => p.id);
-
-  if (syncCategories.includes('mcps')) {
-    syncProviders = (await askMultiSelect(
-      'Which MCP providers should be synced?',
-      ALL_PROVIDERS.map((p) => ({ label: p.displayName, value: p.id }))
-    )) as string[];
-  }
-
-  let syncAgents: string[] | undefined;
-  let syncSkills: string[] | undefined;
-  let syncPlugins: string[] | undefined;
-
-  if (useUI) {
-    console.log('');
-    sparkle('Opening browser UI for individual item selection...');
-
-    const agentNames = syncCategories.includes('agents') ? listLocalAgentNames() : [];
-    const skillNames = syncCategories.includes('skills') ? listLocalSkillNames() : [];
-    const mcpNames = syncCategories.includes('mcps') ? syncProviders : [];
-    const aiProviders = syncProviders.map((id) => ALL_PROVIDERS.find((p) => p.id === id)?.displayName || id);
-
-    const manifests = syncCategories.includes('plugins') ? readPluginManifests() : {};
-    const pluginNames = Object.keys(manifests.hasOwnProperty('plugins/installed_plugins.json')
-      ? ((manifests['plugins/installed_plugins.json'] as Record<string, unknown>) || {})
-      : {});
-
-    const uiItems: UiItems = {
-      agents: agentNames,
-      skills: skillNames,
-      mcps: mcpNames,
-      ...(aiProviders.length > 0 && { aiProviders }),
-      ...(pluginNames.length > 0 && { plugins: pluginNames }),
-    };
-
-    const filters = await openSelectionUi(uiItems, 'push');
-
-    if (filters.agentNames) {
-      syncAgents = Array.from(filters.agentNames);
-    }
-    if (filters.skillNames) {
-      syncSkills = Array.from(filters.skillNames);
-    }
-    if (filters.pluginNames) {
-      syncPlugins = Array.from(filters.pluginNames);
-    }
-  }
-
-  return { syncCategories, syncProviders, syncAgents, syncSkills, syncPlugins };
-}
 
 async function initProjectCommand(): Promise<void> {
   section('Init Project');

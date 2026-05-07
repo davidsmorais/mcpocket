@@ -18,10 +18,10 @@ export interface McpocketConfig {
   // Gist storage
   gistId?: string;
   gistUrl?: string;
-  // Sync scope (undefined = all)
+  // DEPRECATED: Sync scope selection moved to push/pull tree picker + per-item chooser
+  // These fields are kept for backward compat with old configs but no longer used
   syncCategories?: SyncCategory[];
   syncProviders?: string[];
-  // Individual item selection (when using --ui flag)
   syncAgents?: string[];
   syncSkills?: string[];
   syncPlugins?: string[];
