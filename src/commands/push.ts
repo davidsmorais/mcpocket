@@ -13,7 +13,7 @@ import { pickInventoryItems } from './tree-select.js';
 import { formatProviderList, resolveProviderSelection } from './provider-options.js';
 import type { ProviderFlagOptions } from './provider-options.js';
 import { askSecret, ask } from '../utils/prompt.js';
-import { readProjectConfig } from '../sync/project.js';
+import { readProjectConfig, PROJECT_CONFIG_FILENAME } from '../sync/project.js';
 import { sparkle, celebrate, section, stat, oops, heads_up, WITTY, c, subItem } from '../utils/sparkle.js';
 
 export async function pushCommand(
@@ -43,16 +43,20 @@ export async function pushCommand(
 
   let projectItems: InventoryItem[] = [];
   let projectName: string | undefined;
-  if (options.project || fs.existsSync(path.join(process.cwd(), 'mcpocket.json'))) {
-    try {
-      const projectConfig = readProjectConfig();
-      const defaultName = projectConfig.projectName;
-      const answer = options.all ? defaultName : await ask(`  Project name [${defaultName}]: `);
-      projectName = (answer || '').trim() || defaultName;
-      projectItems = discoverProjectInventory(process.cwd(), projectName);
-    } catch {
-      // No project config; skip
+  const cwd = process.cwd();
+  const projectConfigPath = path.join(cwd, PROJECT_CONFIG_FILENAME);
+  if (options.project || fs.existsSync(projectConfigPath)) {
+    let defaultName = path.basename(cwd);
+    if (fs.existsSync(projectConfigPath)) {
+      try {
+        defaultName = readProjectConfig().projectName || defaultName;
+      } catch {
+        // Invalid project config should not block explicit --project discovery.
+      }
     }
+    const answer = options.all ? defaultName : await ask(`  Project name [${defaultName}]: `);
+    projectName = (answer || '').trim() || defaultName;
+    projectItems = discoverProjectInventory(cwd, projectName);
   }
 
   const allItems = [...globalItems, ...projectItems];

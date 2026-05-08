@@ -28,11 +28,16 @@ export function writeProjectConfig(config: ProjectConfig): void {
 const WELL_KNOWN_AI_FILES = [
   'CLAUDE.md',
   'AGENTS.md',
+  'COPILOT.md',
   '.cursorrules',
   '.cursor/rules',
   '.github/copilot-instructions.md',
   '.clinerules',
   'GEMINI.md',
+  'mcp.json',
+  'mcp-config.json',
+  '.vscode/mcp.json',
+  '.cursor/mcp.json',
 ];
 
 // Project-local provider directories to scan for agents, skills, and extensions
@@ -40,6 +45,8 @@ const WELL_KNOWN_AI_DIRS = [
   '.claude/agents',
   '.claude/skills',
   '.copilot/agents',
+  '.gemini/agents',
+  '.gemini/skills',
   '.opencode',
 ];
 

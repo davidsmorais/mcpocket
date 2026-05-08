@@ -190,15 +190,23 @@ interface ProjectSourceSpec {
 
 function projectSources(): ProjectSourceSpec[] {
   return [
+    { tool: 'claude', category: 'files', rel: 'CLAUDE.md', isDir: false },
+    { tool: 'copilot', category: 'files', rel: 'AGENTS.md', isDir: false },
+    { tool: 'copilot', category: 'files', rel: 'COPILOT.md', isDir: false },
+    { tool: 'gemini', category: 'files', rel: 'GEMINI.md', isDir: false },
+    { tool: 'copilot', category: 'files', rel: 'mcp.json', isDir: false },
+    { tool: 'copilot', category: 'files', rel: 'mcp-config.json', isDir: false },
+    { tool: 'copilot', category: 'files', rel: '.vscode/mcp.json', isDir: false },
+    { tool: 'copilot', category: 'files', rel: '.cursor/mcp.json', isDir: false },
     { tool: 'claude', category: 'settings', rel: '.claude/settings.json', isDir: false },
     { tool: 'claude', category: 'agents', rel: '.claude/agents', isDir: true, ext: '.md' },
     { tool: 'claude', category: 'skills', rel: '.claude/skills', isDir: true },
-    { tool: 'claude', category: 'files', rel: 'CLAUDE.md', isDir: false },
     { tool: 'copilot', category: 'agents', rel: '.copilot/agents', isDir: true, ext: '.md' },
     { tool: 'copilot', category: 'settings', rel: '.github/copilot-instructions.md', isDir: false },
     { tool: 'opencode', category: 'agents', rel: '.opencode/agents', isDir: true, ext: '.md' },
     { tool: 'opencode', category: 'extensions', rel: '.opencode/extensions', isDir: true },
-    { tool: 'gemini', category: 'files', rel: 'GEMINI.md', isDir: false },
+    { tool: 'gemini', category: 'agents', rel: '.gemini/agents', isDir: true, ext: '.md' },
+    { tool: 'gemini', category: 'skills', rel: '.gemini/skills', isDir: true },
   ];
 }
 

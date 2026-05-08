@@ -1,7 +1,7 @@
 # Graph Report - /home/david/dev/mcpocket  (2026-05-08)
 
 ## Corpus Check
-- 51 files · ~126,023 words
+- 51 files · ~126,275 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
