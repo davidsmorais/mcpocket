@@ -78,7 +78,7 @@ async function pickEntriesToPull(entries: ManifestEntry[]): Promise<ManifestEntr
   const selected = await askMultiSelect<ManifestEntry>(
     'Select files to pull (space toggles, enter confirms):',
     sorted.map((e) => ({
-      label: `${c.dim(`[${e.tool}/${e.category}/${scopeLabel(e.scope)}]`)} ${e.pocketPath}`,
+      label: `[${e.tool}/${e.category}/${scopeLabel(e.scope)}] ${e.pocketPath}`,
       value: e,
     })),
   );

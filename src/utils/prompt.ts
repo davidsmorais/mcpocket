@@ -17,6 +17,63 @@ export interface MultiSelectOption<T> {
   value: T;
 }
 
+type InkModule = {
+  Box: any;
+  Text: any;
+  render: (node: any, options?: { exitOnCtrlC?: boolean }) => { unmount: () => void };
+  useInput: (handler: (input: string, key: { upArrow?: boolean; downArrow?: boolean; pageUp?: boolean; pageDown?: boolean; return?: boolean; ctrl?: boolean }) => void) => void;
+};
+
+type ReactModule = {
+  createElement: (type: any, props?: any, ...children: any[]) => any;
+  useMemo: <T>(factory: () => T, deps: readonly unknown[]) => T;
+  useState: <T>(initial: T | (() => T)) => [T, (value: T | ((prev: T) => T)) => void];
+};
+
+const dynamicImport = new Function('modulePath', 'return import(modulePath)') as (modulePath: string) => Promise<any>;
+
+async function loadInkRuntime(): Promise<{ React: ReactModule; ink: InkModule }> {
+  const [React, ink] = await Promise.all([
+    dynamicImport('react'),
+    dynamicImport('ink'),
+  ]);
+  return { React, ink };
+}
+
+async function runInkPrompt<T>(
+  buildApp: (runtime: {
+    React: ReactModule;
+    ink: InkModule;
+    submit: (value: T) => void;
+    cancel: () => void;
+  }) => any,
+): Promise<T> {
+  const { React, ink } = await loadInkRuntime();
+
+  return new Promise<T>((resolve) => {
+    let settled = false;
+    let instance: { unmount: () => void } | undefined;
+
+    const finish = (fn: () => void): void => {
+      if (settled) return;
+      settled = true;
+      fn();
+      setImmediate(() => instance?.unmount());
+    };
+
+    const submit = (value: T): void => {
+      finish(() => resolve(value));
+    };
+
+    const cancel = (): void => {
+      finish(() => process.exit(1));
+    };
+
+    const App = () => buildApp({ React, ink, submit, cancel });
+    instance = ink.render(React.createElement(App), { exitOnCtrlC: false });
+  });
+}
+
 /**
  * Interactive multi-select with keyboard navigation.
  *
@@ -42,213 +99,110 @@ export async function askMultiSelect<T>(
   if (!process.stdin.isTTY) {
     return options.map((o) => o.value);
   }
+  return runInkPrompt<T[]>(({ React, ink, submit, cancel }) => {
+    const { Box, Text, useInput } = ink;
+    const [cursor, setCursor] = React.useState(0);
+    const [selected, setSelected] = React.useState<Set<number>>(() => new Set(options.map((_, i) => i)));
 
-  // Start with everything selected — user deselects what they don't want.
-  const selected = new Set<number>(options.map((_, i) => i));
-  let cursor = 0;
-  let offset = 0;
-  let initialRender = true;
-  let lastBlockLines = 0;
+    const viewportSize = Math.max(3, ((process.stdout as any).rows ?? 24) - 8);
+    const firstIndex = Math.min(Math.max(0, cursor - Math.floor(viewportSize / 2)), Math.max(0, options.length - viewportSize));
+    const lastIndex = Math.min(firstIndex + viewportSize, options.length);
 
-  const computeViewportSize = (): number => {
-    const rows = (process.stdout as any).rows ?? 24;
-    return Math.max(1, rows - 2);
-  };
-
-  // (viewport-based rendering; dynamic height)
-
-  function render(): void {
-    const viewportSize = computeViewportSize();
-    const firstIndex = offset;
-    const lastIndex = Math.min(offset + viewportSize, options.length);
-    const visibleCount = Math.max(0, lastIndex - firstIndex);
-
-    if (!initialRender) {
-      // Jump back to the first line of our block
-      process.stdout.write(`\x1b[${lastBlockLines}F`);
-    }
-    initialRender = false;
-
-    // Question
-    process.stdout.write(`\x1b[2K  ${question}\n`);
-
-    // Visible options
-    for (let i = firstIndex; i < lastIndex; i++) {
-      const isActive   = i === cursor;
-      const isSelected = selected.has(i);
-      const pointer    = isActive   ? c.cyan('❯') : ' ';
-      const checkbox   = isSelected ? c.green('◉') : c.dim('○');
-      const label      = isActive   ? c.bold(options[i].label) : options[i].label;
-      process.stdout.write(`\x1b[2K  ${pointer} ${checkbox} ${label}\n`);
-    }
-
-    // Fill remaining lines in the viewport with blanks to avoid artifacts
-    for (let j = visibleCount; j < viewportSize; j++) {
-      process.stdout.write('\x1b[2K\n');
-    }
-
-    // Hint
-    process.stdout.write(
-      `\x1b[2K${c.dim('  ↑/↓ navigate   PageUp/PageDown   Home/End   space toggle   a toggle all   g agents   s skills   Enter confirm')}\n`,
+    const visible = React.useMemo(
+      () => options.slice(firstIndex, lastIndex).map((opt, idx) => ({ option: opt, index: firstIndex + idx })),
+      [firstIndex, lastIndex],
     );
 
-    // Track block height for next render (full block height is viewportSize + 2 lines)
-    lastBlockLines = viewportSize + 2;
-  }
-
-  // Hide cursor while navigating
-  process.stdout.write('\x1b[?25l');
-  render();
-
-  return new Promise((resolve) => {
-    process.stdin.setRawMode(true);
-    process.stdin.resume();
-    process.stdin.setEncoding('utf8');
-
-    function cleanup(): void {
-      process.stdin.removeListener('data', onData);
-      process.stdin.setRawMode(false);
-      process.stdin.pause();
-      process.stdout.write('\x1b[?25h'); // restore cursor
-    }
-
-    function onData(key: string): void {
-      // Ctrl+C — abort
-      if (key === '\u0003') {
-        cleanup();
-        process.stdout.write('\n');
-        process.exit(1);
-      }
-
-      // Enter — confirm
-      if (key === '\r' || key === '\n') {
-        cleanup();
-        process.stdout.write('\n');
-        resolve(options.filter((_, i) => selected.has(i)).map((o) => o.value));
-        return;
-      }
-
-      // Space — toggle current item
-      if (key === ' ') {
-        if (selected.has(cursor)) {
-          selected.delete(cursor);
-        } else {
-          selected.add(cursor);
+    const toggleIndices = (indices: number[]): void => {
+      if (indices.length === 0) return;
+      setSelected((prev) => {
+        const next = new Set(prev);
+        const allSelected = indices.every((i) => next.has(i));
+        for (const i of indices) {
+          if (allSelected) next.delete(i);
+          else next.add(i);
         }
-        render();
+        return next;
+      });
+    };
+
+    useInput((input, key) => {
+      if (key.ctrl && input === 'c') {
+        cancel();
         return;
       }
-
-      // a / A — toggle all on or all off
-      if (key === 'a' || key === 'A') {
-        if (selected.size === options.length) {
-          selected.clear();
-        } else {
-          for (let i = 0; i < options.length; i++) selected.add(i);
-        }
-        render();
+      if (key.return) {
+        submit(options.filter((_, i) => selected.has(i)).map((o) => o.value));
         return;
       }
-
-      // g / G — toggle all agents (items with [agent] in label)
-      if (key === 'g' || key === 'G') {
-        const agentIndices = options
-          .map((opt, i) => opt.label.includes('[agent]') ? i : -1)
-          .filter((i) => i >= 0);
-        if (agentIndices.length === 0) return;
-        const allSelected = agentIndices.every((i) => selected.has(i));
-        if (allSelected) {
-          agentIndices.forEach((i) => selected.delete(i));
-        } else {
-          agentIndices.forEach((i) => selected.add(i));
-        }
-        render();
+      if (input === ' ') {
+        setSelected((prev) => {
+          const next = new Set(prev);
+          if (next.has(cursor)) next.delete(cursor);
+          else next.add(cursor);
+          return next;
+        });
         return;
       }
-
-      // s / S — toggle all skills (items with [skill] in label)
-      if (key === 's' || key === 'S') {
-        const skillIndices = options
-          .map((opt, i) => opt.label.includes('[skill]') ? i : -1)
-          .filter((i) => i >= 0);
-        if (skillIndices.length === 0) return;
-        const allSelected = skillIndices.every((i) => selected.has(i));
-        if (allSelected) {
-          skillIndices.forEach((i) => selected.delete(i));
-        } else {
-          skillIndices.forEach((i) => selected.add(i));
-        }
-        render();
+      if (input === 'a' || input === 'A') {
+        setSelected((prev) => {
+          if (prev.size === options.length) return new Set<number>();
+          return new Set<number>(options.map((_, i) => i));
+        });
         return;
       }
-
-      // Arrow up or k — move cursor up
-      if (key === '\x1b[A' || key === 'k') {
-        if (cursor > 0) {
-          cursor--;
-          if (cursor < offset) offset = cursor;
-          render();
-        }
+      if (input === 'g' || input === 'G') {
+        toggleIndices(options.map((opt, i) => (opt.label.includes('[agent]') ? i : -1)).filter((i) => i >= 0));
         return;
       }
-
-      // Arrow down or j — move cursor down
-      if (key === '\x1b[B' || key === 'j') {
-        if (cursor < options.length - 1) {
-          const viewportSize = computeViewportSize();
-          const bottomIndex = offset + viewportSize - 1;
-          if (cursor < bottomIndex) {
-            cursor++;
-          } else if (offset + viewportSize < options.length) {
-            offset += viewportSize;
-            const vp = computeViewportSize();
-            if (offset > options.length - vp) offset = Math.max(0, options.length - vp);
-            cursor = offset; // first item of new viewport
-          } else {
-            cursor = Math.min(cursor + 1, options.length - 1);
-          }
-          const vp = computeViewportSize();
-          if (cursor < offset) cursor = offset;
-          if (cursor >= offset + vp) cursor = offset + vp - 1;
-          render();
-        }
+      if (input === 's' || input === 'S') {
+        toggleIndices(options.map((opt, i) => (opt.label.includes('[skill]') ? i : -1)).filter((i) => i >= 0));
         return;
       }
-
-      // Page Up / Page Down
-      if (key === '\x1b[5~') {
-        const vp = computeViewportSize();
-        if (offset > 0) {
-          offset = Math.max(0, offset - vp);
-          cursor = offset;
-          render();
-        }
+      if (key.upArrow || input === 'k') {
+        setCursor((prev) => Math.max(0, prev - 1));
         return;
       }
-      if (key === '\x1b[6~') {
-        const vp = computeViewportSize();
-        if (offset + vp < options.length) {
-          offset = Math.min(offset + vp, Math.max(0, options.length - vp));
-          cursor = offset;
-          render();
-        }
+      if (key.downArrow || input === 'j') {
+        setCursor((prev) => Math.min(options.length - 1, prev + 1));
         return;
       }
-
-      // Home / End – jump to first / last page
-      if (key === '\x1b[H') {
-        offset = 0; cursor = 0; render(); return; // Home
+      if (key.pageUp) {
+        setCursor((prev) => Math.max(0, prev - viewportSize));
+        return;
       }
-      if (key === '\x1b[F') {
-        const vp = computeViewportSize();
-        offset = Math.max(0, options.length - vp);
-        cursor = offset;
-        render();
-        return; // End
+      if (key.pageDown) {
+        setCursor((prev) => Math.min(options.length - 1, prev + viewportSize));
       }
-    }
+    });
 
-    process.stdin.on('data', onData);
+    return React.createElement(
+      Box,
+      { flexDirection: 'column' },
+      React.createElement(Text, { color: 'magentaBright', bold: true }, `✦ ${question}`),
+      React.createElement(Text, { dimColor: true }, `${selected.size}/${options.length} selected`),
+      ...visible.map(({ option, index }) => {
+        const isActive = index === cursor;
+        const isSelected = selected.has(index);
+        const prefix = isActive ? '❯' : ' ';
+        const marker = isSelected ? '●' : '○';
+        return React.createElement(
+          Text,
+          { key: String(index), color: isActive ? 'cyan' : undefined, bold: isActive || undefined },
+          ` ${prefix} ${marker} ${option.label}`,
+        );
+      }),
+      React.createElement(
+        Text,
+        { dimColor: true },
+        `${firstIndex > 0 ? '↑ more' : '      '} · ${lastIndex < options.length ? '↓ more' : '      '}`,
+      ),
+      React.createElement(
+        Text,
+        { dimColor: true },
+        ' ↑/↓ navigate   PgUp/PgDn   space toggle   a all   g agents   s skills   Enter confirm',
+      ),
+    );
   });
 }
 
@@ -308,74 +262,48 @@ export async function askSingleSelect<T>(
   if (!process.stdin.isTTY) {
     return options[0].value;
   }
+  return runInkPrompt<T>(({ React, ink, submit, cancel }) => {
+    const { Box, Text, useInput } = ink;
+    const [cursor, setCursor] = React.useState(0);
+    const viewportSize = Math.max(3, ((process.stdout as any).rows ?? 24) - 6);
+    const firstIndex = Math.min(Math.max(0, cursor - Math.floor(viewportSize / 2)), Math.max(0, options.length - viewportSize));
+    const lastIndex = Math.min(firstIndex + viewportSize, options.length);
+    const visible = options.slice(firstIndex, lastIndex);
 
-  let cursor = 0;
-  let initialRender = true;
-  const BLOCK_LINES = options.length + 2;
+    useInput((input, key) => {
+      if (key.ctrl && input === 'c') {
+        cancel();
+        return;
+      }
+      if (key.return) {
+        submit(options[cursor].value);
+        return;
+      }
+      if (key.upArrow || input === 'k') {
+        setCursor((prev) => Math.max(0, prev - 1));
+        return;
+      }
+      if (key.downArrow || input === 'j') {
+        setCursor((prev) => Math.min(options.length - 1, prev + 1));
+      }
+    });
 
-  function render(): void {
-    if (!initialRender) {
-      process.stdout.write(`\x1b[${BLOCK_LINES}F`);
-    }
-    initialRender = false;
-
-    process.stdout.write(`\x1b[2K  ${question}\n`);
-
-    for (let i = 0; i < options.length; i++) {
-      const isActive = i === cursor;
-      const pointer = isActive ? c.cyan('❯') : ' ';
-      const label   = isActive ? c.bold(options[i].label) : options[i].label;
-      process.stdout.write(`\x1b[2K  ${pointer} ${label}\n`);
-    }
-
-    process.stdout.write(
-      `\x1b[2K${c.dim('  ↑↓ navigate   enter select')}\n`,
+    return React.createElement(
+      Box,
+      { flexDirection: 'column' },
+      React.createElement(Text, { color: 'magentaBright', bold: true }, `✦ ${question}`),
+      ...visible.map((opt, i) => {
+        const index = firstIndex + i;
+        const isActive = index === cursor;
+        const prefix = isActive ? '❯' : ' ';
+        return React.createElement(
+          Text,
+          { key: String(index), color: isActive ? 'cyan' : undefined, bold: isActive || undefined },
+          ` ${prefix} ${opt.label}`,
+        );
+      }),
+      React.createElement(Text, { dimColor: true }, ' ↑/↓ navigate   Enter select'),
     );
-  }
-
-  process.stdout.write('\x1b[?25l');
-  render();
-
-  return new Promise((resolve) => {
-    process.stdin.setRawMode(true);
-    process.stdin.resume();
-    process.stdin.setEncoding('utf8');
-
-    function cleanup(): void {
-      process.stdin.removeListener('data', onData);
-      process.stdin.setRawMode(false);
-      process.stdin.pause();
-      process.stdout.write('\x1b[?25h');
-    }
-
-    function onData(key: string): void {
-      if (key === '\u0003') {
-        cleanup();
-        process.stdout.write('\n');
-        process.exit(1);
-      }
-
-      if (key === '\r' || key === '\n') {
-        cleanup();
-        process.stdout.write('\n');
-        resolve(options[cursor].value);
-        return;
-      }
-
-      if (key === '\x1b[A' || key === 'k') {
-        cursor = (cursor - 1 + options.length) % options.length;
-        render();
-        return;
-      }
-
-      if (key === '\x1b[B' || key === 'j') {
-        cursor = (cursor + 1) % options.length;
-        render();
-        return;
-      }
-    }
-
-    process.stdin.on('data', onData);
   });
 }
 

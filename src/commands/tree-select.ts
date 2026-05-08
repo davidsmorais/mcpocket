@@ -1,5 +1,4 @@
 import { askMultiSelect } from '../utils/prompt.js';
-import { c } from '../utils/sparkle.js';
 import type { InventoryItem } from '../sync/inventory.js';
 import type { Tool, Category, Scope } from '../sync/manifest.js';
 import { scopeLabel } from '../sync/manifest.js';
@@ -52,7 +51,7 @@ function buildRows(items: InventoryItem[]): FlatRow[] {
       rows.push({
         id: `__header_tool_${it.tool}_${scopeStr}__`,
         isHeader: true,
-        label: `${c.bold(TOOL_LABEL[it.tool])} ${c.dim('—')} ${c.cyan(scopeStr)}`,
+        label: `${TOOL_LABEL[it.tool]} — ${scopeStr}`,
       });
       lastTool = it.tool;
       lastScope = scopeStr;
@@ -62,7 +61,7 @@ function buildRows(items: InventoryItem[]): FlatRow[] {
       rows.push({
         id: `__header_cat_${it.tool}_${scopeStr}_${it.category}__`,
         isHeader: true,
-        label: `  ${c.dim(CATEGORY_LABEL[it.category])}`,
+        label: `  ${CATEGORY_LABEL[it.category]}`,
       });
       lastCategory = it.category;
     }

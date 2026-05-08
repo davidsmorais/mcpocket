@@ -4,3 +4,4 @@ dist/
 *.d.ts.map
 .DS_Store
 .npmrc
+graphify-out/cache/
